@@ -1,0 +1,5 @@
+.env
+__pycache__/
+.venv/
+*.pyc
+src/project_seek.egg-info/
