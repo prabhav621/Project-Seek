@@ -216,6 +216,22 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 await message.reply_text("Your insights have been logged. The Forge adjusts.")
 
 
+import os
+from aiohttp import web
+
+async def health_check(request):
+    return web.Response(text="Project Seek Bot is ALIVE and healthy.")
+
+async def start_dummy_server():
+    port = int(os.environ.get("PORT", 10000))
+    app = web.Application()
+    app.router.add_get('/', health_check)
+    runner = web.AppRunner(app)
+    await runner.setup()
+    site = web.TCPSite(runner, '0.0.0.0', port)
+    await site.start()
+    print(f"Dummy web server listening on port {port} for Render health checks.")
+
 def main():
     token = settings.telegram_bot_token
     if not token:
@@ -236,6 +252,10 @@ def main():
     application.add_handler(MessageReactionHandler(handle_reaction))
 
     print("Starting Telegram Bot (Phase 4 Delivery Tasks)...")
+    
+    loop = asyncio.get_event_loop()
+    loop.create_task(start_dummy_server())
+
     application.run_polling(allowed_updates=Update.ALL_TYPES)
 
 if __name__ == '__main__':
