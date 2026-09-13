@@ -1,0 +1,17 @@
+[providers]
+exclude = ["node"]
+
+[phases.setup]
+nixPkgs = ["python311", "ffmpeg", "libffi"]
+
+[phases.install]
+cmds = [
+    "python -m venv /opt/venv",
+    ". /opt/venv/bin/activate",
+    "pip install --upgrade pip",
+    "pip install -r requirements.txt",
+    "playwright install --with-deps chromium"
+]
+
+[start]
+cmd = ". /opt/venv/bin/activate && python src/delivery/telegram_bot.py"

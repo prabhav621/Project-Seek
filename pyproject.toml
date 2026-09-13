@@ -1,0 +1,22 @@
+[project]
+name = "project-seek"
+version = "0.1.0"
+description = "Autonomous Personal Intelligence System"
+readme = "README.md"
+requires-python = ">=3.10"
+dependencies = [
+    "fastapi",
+    "uvicorn",
+    "sqlalchemy",
+    "alembic",
+    "pgvector",
+    "pydantic",
+    "pydantic-settings",
+    "python-telegram-bot",
+    "crawl4ai",
+    "yt-dlp",
+    "faster-whisper",
+    "apscheduler",
+    "google-genai",
+    "psycopg2-binary"
+]
