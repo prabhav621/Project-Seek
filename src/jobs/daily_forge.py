@@ -11,7 +11,7 @@ sys.path.append(str(src_path))
 from db.session import SessionLocal
 from intelligence.curator import curate_daily_forge
 from delivery.formatter import format_daily_forge
-from config import settings
+from src.config import settings
 
 async def send_forge():
     db = SessionLocal()

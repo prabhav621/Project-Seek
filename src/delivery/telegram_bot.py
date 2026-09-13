@@ -9,7 +9,7 @@ from telegram.ext import Application, ContextTypes, MessageHandler, filters, Mes
 root_path = Path(__file__).resolve().parent.parent.parent
 sys.path.append(str(root_path))
 
-from config import settings
+from src.config import settings
 from src.db.session import SessionLocal
 from src.db.models import DailyItem, InterestVector
 from src.intelligence.reply_analyzer import ReplyAnalyzer

@@ -11,7 +11,7 @@ from src.db.session import SessionLocal
 from src.db.models import InterestVector, ContentItem
 from src.ingestion.embedder import get_embedder
 from src.synthesis.domain_tagger import DomainTagger
-from config import settings
+from src.config import settings
 from google import genai
 from duckduckgo_search import DDGS
 from src.ingestion.parser import UniversalLinkParser

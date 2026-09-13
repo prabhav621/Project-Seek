@@ -9,7 +9,7 @@ sys.path.append(str(src_path))
 
 from db.session import SessionLocal
 from db.models import ContentItem
-from config import settings
+from src.config import settings
 
 async def check_failures():
     db = SessionLocal()

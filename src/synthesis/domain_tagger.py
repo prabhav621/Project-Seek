@@ -4,7 +4,7 @@ from sqlalchemy import select
 from src.db.models import InterestVector
 from src.ingestion.embedder import get_embedder
 from google import genai
-from config import settings
+from src.config import settings
 
 class DomainTagger:
     """
