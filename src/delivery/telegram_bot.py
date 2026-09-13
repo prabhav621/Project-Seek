@@ -222,7 +222,7 @@ from aiohttp import web
 async def health_check(request):
     return web.Response(text="Project Seek Bot is ALIVE and healthy.")
 
-async def start_dummy_server():
+async def start_dummy_server(application: Application):
     port = int(os.environ.get("PORT", 10000))
     app = web.Application()
     app.router.add_get('/', health_check)
@@ -238,7 +238,7 @@ def main():
         print("Error: telegram_bot_token is missing from configuration.")
         return
 
-    application = Application.builder().token(token).build()
+    application = Application.builder().token(token).post_init(start_dummy_server).build()
 
     url_filter = (
         filters.Entity(MessageEntityType.URL) | 
@@ -253,9 +253,6 @@ def main():
 
     print("Starting Telegram Bot (Phase 4 Delivery Tasks)...")
     
-    loop = asyncio.get_event_loop()
-    loop.create_task(start_dummy_server())
-
     application.run_polling(allowed_updates=Update.ALL_TYPES)
 
 if __name__ == '__main__':
