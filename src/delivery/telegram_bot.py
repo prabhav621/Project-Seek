@@ -85,51 +85,53 @@ async def process_individual_background(urls: list, chat_id: int, bot):
     await bot.send_message(chat_id=chat_id, text=f"✅ Batch ingestion completed!\nSuccess: {success_count}\nFailed: {fail_count}")
 
 async def process_playlist_background(playlist_url: str, chat_id: int, bot):
-    import yt_dlp
-    from src.ingestion.parser import UniversalLinkParser
-    from src.db.session import SessionLocal
-    
-    def extract_playlist():
-        ydl_opts = {'extract_flat': True, 'quiet': True, 'skip_download': True}
-        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-            return ydl.extract_info(playlist_url, download=False)
-            
-    video_urls = []
     try:
-        info = await asyncio.to_thread(extract_playlist)
-        if 'entries' in info:
-            for entry in info['entries']:
-                if entry and entry.get('url'):
-                    v_url = entry.get('url')
-                    if not v_url.startswith('http'):
-                        v_url = f"https://www.youtube.com/watch?v={v_url}"
-                    video_urls.append(v_url)
-    except Exception as e:
-        print(f"Failed to extract playlist: {e}")
-        await bot.send_message(chat_id=chat_id, text=f"❌ Failed to extract playlist {playlist_url}: {str(e)}")
-        return
+        import yt_dlp
+        from src.ingestion.parser import UniversalLinkParser
+        from src.db.session import SessionLocal
         
-    print(f"Found {len(video_urls)} videos in playlist. Ingesting...")
-    await bot.send_message(chat_id=chat_id, text=f"Found {len(video_urls)} videos in playlist. Starting sequential ingestion (rate-limited to 6s/video)...")
-    
-    success_count = 0
-    fail_count = 0
-    
-    with SessionLocal() as db:
-        parser = UniversalLinkParser(db)
-        for v_url in video_urls:
-            try:
-                await parser.process_url(v_url, ingestion_mode='manual')
-                success_count += 1
-                print(f"Ingested playlist video: {v_url}")
-            except Exception as e:
-                fail_count += 1
-                print(f"Failed to ingest playlist video {v_url}: {e}")
+        def extract_playlist():
+            ydl_opts = {'extract_flat': True, 'quiet': True, 'skip_download': True}
+            with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+                return ydl.extract_info(playlist_url, download=False)
                 
-            # RATE LIMITING: 6 seconds per item
-            await asyncio.sleep(6)
+        video_urls = []
+        try:
+            info = await asyncio.to_thread(extract_playlist)
+            if 'entries' in info:
+                for entry in info['entries']:
+                    if entry and entry.get('url'):
+                        v_url = entry.get('url')
+                        if not v_url.startswith('http'):
+                            v_url = f"https://www.youtube.com/watch?v={v_url}"
+                        video_urls.append(v_url)
+        except Exception as e:
+            print(f"Failed to extract playlist: {e}")
+            await bot.send_message(chat_id=chat_id, text=f"❌ Failed to extract playlist {playlist_url}: {str(e)}")
+            return
+            
+        print(f"Found {len(video_urls)} videos in playlist. Ingesting...")
+        await bot.send_message(chat_id=chat_id, text=f"Found {len(video_urls)} videos in playlist. Starting sequential ingestion (rate-limited to 6s/video)...")
+        
+        success_count = 0
+        fail_count = 0
+        
+        with SessionLocal() as db:
+            parser = UniversalLinkParser(db)
+            for v_url in video_urls:
+                try:
+                    await parser.process_url(v_url, ingestion_mode='manual')
+                    success_count += 1
+                    print(f"Ingested playlist video: {v_url}")
+                except Exception as e:
+                    print(f"Error on {v_url}: {e}")
+                    fail_count += 1
+                await asyncio.sleep(6)
                 
-    await bot.send_message(chat_id=chat_id, text=f"✅ Playlist ingestion completed!\nSuccess: {success_count}\nFailed: {fail_count}")
+        await bot.send_message(chat_id=chat_id, text=f"✅ Batch ingestion completed!\nSuccess: {success_count}\nFailed: {fail_count}")
+    except Exception as fatal_e:
+        print(f"Fatal error in background task: {fatal_e}")
+        await bot.send_message(chat_id=chat_id, text=f"🚨 CRITICAL SYSTEM CRASH during processing: {str(fatal_e)}")
 
 
 async def handle_reaction(update: Update, context: ContextTypes.DEFAULT_TYPE):
