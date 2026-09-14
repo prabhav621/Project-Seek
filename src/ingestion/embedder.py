@@ -28,6 +28,6 @@ class KrutrimLocalEmbedder:
         embeddings = self.model.encode(texts, convert_to_numpy=True)
         return [emb.tolist() for emb in embeddings]
 
-def get_default_embedder() -> Embedder:
+def get_embedder() -> Embedder:
     """Returns the default embedding provider adapter."""
     return KrutrimLocalEmbedder()
