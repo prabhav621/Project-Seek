@@ -21,3 +21,5 @@ COPY . .
 
 # Command to run the bot
 CMD ["python", "-u", "src/delivery/telegram_bot.py"]
+
+EXPOSE 7860

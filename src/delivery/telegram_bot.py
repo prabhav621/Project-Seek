@@ -89,19 +89,21 @@ async def process_playlist_background(playlist_url: str, chat_id: int, bot):
     from src.ingestion.parser import UniversalLinkParser
     from src.db.session import SessionLocal
     
-    ydl_opts = {'extract_flat': True, 'quiet': True, 'skip_download': True}
-    video_urls = []
-    
-    try:
+    def extract_playlist():
+        ydl_opts = {'extract_flat': True, 'quiet': True, 'skip_download': True}
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-            info = ydl.extract_info(playlist_url, download=False)
-            if 'entries' in info:
-                for entry in info['entries']:
-                    if entry and entry.get('url'):
-                        v_url = entry.get('url')
-                        if not v_url.startswith('http'):
-                            v_url = f"https://www.youtube.com/watch?v={v_url}"
-                        video_urls.append(v_url)
+            return ydl.extract_info(playlist_url, download=False)
+            
+    video_urls = []
+    try:
+        info = await asyncio.to_thread(extract_playlist)
+        if 'entries' in info:
+            for entry in info['entries']:
+                if entry and entry.get('url'):
+                    v_url = entry.get('url')
+                    if not v_url.startswith('http'):
+                        v_url = f"https://www.youtube.com/watch?v={v_url}"
+                    video_urls.append(v_url)
     except Exception as e:
         print(f"Failed to extract playlist: {e}")
         await bot.send_message(chat_id=chat_id, text=f"❌ Failed to extract playlist {playlist_url}: {str(e)}")
@@ -223,7 +225,7 @@ async def health_check(request):
     return web.Response(text="Project Seek Bot is ALIVE and healthy.")
 
 async def start_dummy_server(application: Application):
-    port = int(os.environ.get("PORT", 10000))
+    port = int(os.environ.get("PORT", 7860))
     app = web.Application()
     app.router.add_get('/', health_check)
     runner = web.AppRunner(app)

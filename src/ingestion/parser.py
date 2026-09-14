@@ -53,12 +53,12 @@ class UniversalLinkParser:
             
         # 2. Scrape Text
         if source_type == SourceType.YOUTUBE:
-            raw_text = extract_subtitles(url)
+            raw_text = await asyncio.to_thread(extract_subtitles, url)
         elif source_type == SourceType.X_TWITTER:
             raw_text = await scrape_twitter_thread(url)
         elif source_type == SourceType.INSTAGRAM:
             from src.ingestion.instagram import extract_instagram_content
-            raw_text = extract_instagram_content(url)
+            raw_text = await asyncio.to_thread(extract_instagram_content, url)
         else:
             raw_text = await scrape_article(url)
             
