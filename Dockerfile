@@ -20,6 +20,7 @@ RUN playwright install --with-deps chromium
 COPY . .
 
 # Command to run the bot
-CMD ["python", "-u", "src/delivery/telegram_bot.py"]
+ENV PYTHONPATH=/app
+CMD ["python", "-u", "-m", "src.delivery.telegram_bot"]
 
 EXPOSE 7860
