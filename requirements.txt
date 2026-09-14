@@ -127,4 +127,3 @@ yt-dlp==2026.8.19
 zipp==4.1.0
 
 sentence-transformers==3.0.1
-torch==2.4.0
