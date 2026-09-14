@@ -14,7 +14,7 @@ class Embedder(Protocol):
 class GeminiEmbedder:
     def __init__(self):
         self.client = genai.Client(api_key=settings.gemini_api_key)
-        self.model_id = "text-embedding-004"
+        self.model_id = "gemini-embedding-2"
 
     def embed_text(self, text: str) -> List[float]:
         response = self.client.models.embed_content(
