@@ -1,38 +1,49 @@
-import os
-import glob
-import tempfile
-import yt_dlp
+import urllib.parse
+from youtube_transcript_api import YouTubeTranscriptApi
+
+def _extract_video_id(url: str) -> str:
+    """Extracts the video ID from a YouTube URL."""
+    parsed_url = urllib.parse.urlparse(url)
+    if parsed_url.hostname == 'youtu.be':
+        return parsed_url.path[1:]
+    if parsed_url.hostname in ('www.youtube.com', 'youtube.com'):
+        if parsed_url.path == '/watch':
+            qs = urllib.parse.parse_qs(parsed_url.query)
+            return qs.get('v', [None])[0]
+        if parsed_url.path.startswith('/embed/'):
+            return parsed_url.path.split('/')[2]
+        if parsed_url.path.startswith('/v/'):
+            return parsed_url.path.split('/')[2]
+    return None
 
 def extract_subtitles(url: str) -> str:
     """
-    Extracts automatic/manual subtitles from a YouTube video URL using yt-dlp.
-    Prefers manual English subtitles, falls back to automatic.
+    Extracts automatic/manual subtitles from a YouTube video URL using youtube-transcript-api.
+    Prefers English subtitles.
     """
-    with tempfile.TemporaryDirectory() as tmpdir:
-        outtmpl = os.path.join(tmpdir, '%(id)s.%(ext)s')
-        ydl_opts = {
-            'skip_download': True,
-            'writesubtitles': True,
-            'writeautomaticsub': True,
-            'subtitleslangs': ['en'],
-            'subtitlesformat': 'vtt/srt/best',
-            'quiet': True,
-            'outtmpl': outtmpl,
-        }
+    video_id = _extract_video_id(url)
+    if not video_id:
+        raise ValueError(f"Could not extract video ID from {url}")
         
-        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-            try:
-                ydl.download([url])
-            except Exception as e:
-                raise ValueError(f"yt-dlp failed: {str(e)}")
+    try:
+        ytt_api = YouTubeTranscriptApi()
+        transcript_list = ytt_api.list(video_id)
         
-        subtitle_files = glob.glob(os.path.join(tmpdir, '*.*'))
-        if not subtitle_files:
-            raise ValueError("No subtitles were downloaded by yt-dlp.")
-            
+        # Try to find english transcript (manual or generated)
         try:
-            with open(subtitle_files[0], 'r', encoding='utf-8') as f:
-                content = f.read()
-            return content
-        except Exception as e:
-            raise ValueError(f"Error reading subtitle file: {str(e)}")
+            transcript = transcript_list.find_transcript(['en'])
+        except Exception:
+            # Fallback to whatever is available
+            transcript = transcript_list.find_transcript(
+                [t.language_code for t in transcript_list]
+            )
+            
+        transcript_data = transcript.fetch()
+        
+        # Combine text
+        full_text = " ".join([t['text'] for t in transcript_data])
+        
+        return full_text
+        
+    except Exception as e:
+        raise ValueError(f"Failed to fetch transcript: {str(e)}")
