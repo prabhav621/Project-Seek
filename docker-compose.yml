@@ -1,0 +1,16 @@
+version: '3.8'
+services:
+  db:
+    image: pgvector/pgvector:pg16
+    ports:
+      - "5432:5432"
+    environment:
+      POSTGRES_USER: seek_user
+      POSTGRES_PASSWORD: seek_password
+      POSTGRES_DB: seek_db
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    restart: unless-stopped
+
+volumes:
+  postgres_data:

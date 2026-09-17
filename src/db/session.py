@@ -5,8 +5,8 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
-# We prefer DIRECT_URL for SQLAlchemy if available, fallback to DATABASE_URL, then localhost
-DATABASE_URL = os.getenv("DIRECT_URL", os.getenv("DATABASE_URL", "postgresql://postgres:postgres@localhost:5432/postgres"))
+# Use DATABASE_URL for SQLAlchemy connection
+DATABASE_URL = os.getenv("DATABASE_URL", "postgresql://seek_user:seek_password@localhost:5432/seek_db")
 
 engine = create_engine(
     DATABASE_URL,

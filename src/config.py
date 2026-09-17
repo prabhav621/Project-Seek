@@ -18,8 +18,7 @@ class TaskType(str, Enum):
     SUGGESTION_HOOKS = "suggestion_hooks"
 
 class Settings(BaseSettings):
-    supabase_url: str = ""
-    supabase_key: str = ""
+    database_url: str = "postgresql://seek_user:seek_password@localhost:5432/seek_db"
     gemini_api_key: str = ""
     telegram_bot_token: str = ""
     telegram_chat_id: str = ""
