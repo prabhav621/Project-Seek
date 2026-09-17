@@ -3,9 +3,9 @@ from enum import Enum
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 class ModelTier(str, Enum):
-    PRO = "gemini-2.5-pro"
-    FLASH = "gemini-2.5-flash"
-    FLASH_LITE = "gemini-2.5-flash-lite"
+    PRO = "gemini-3.6-flash"
+    FLASH = "gemini-3.6-flash"
+    FLASH_LITE = "gemini-3.6-flash"
 
 class TaskType(str, Enum):
     DEEP_KATA = "deep_kata"

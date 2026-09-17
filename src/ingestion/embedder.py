@@ -20,6 +20,7 @@ class GeminiEmbedder:
         response = self.client.models.embed_content(
             model=self.model_id,
             contents=text,
+            config={"output_dimensionality": 768}
         )
         return response.embeddings[0].values
 
@@ -27,6 +28,7 @@ class GeminiEmbedder:
         response = self.client.models.embed_content(
             model=self.model_id,
             contents=texts,
+            config={"output_dimensionality": 768}
         )
         return [emb.values for emb in response.embeddings]
 

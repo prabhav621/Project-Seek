@@ -35,7 +35,7 @@ class MediaTranscriber:
             prompt = "Please provide a highly accurate transcription of the audio in this file. Output ONLY the transcript without any extra commentary or formatting."
             
             response = self.gemini_client.models.generate_content(
-                model='gemini-2.5-flash',
+                model='gemini-3.6-flash',
                 contents=[
                     gemini_file,
                     prompt

@@ -24,7 +24,7 @@ class ReplyAnalyzer:
         If api_key is not provided, it will try to use the GEMINI_API_KEY environment variable.
         """
         self.client = genai.Client(api_key=api_key)
-        self.model = "gemini-2.5-flash-lite"
+        self.model = "gemini-3.6-flash"
         
     def analyze(self, reply_text: str, original_item_text: str = "") -> ReplyAnalysisResult:
         """

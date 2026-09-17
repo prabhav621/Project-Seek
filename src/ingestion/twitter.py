@@ -62,7 +62,7 @@ async def clean_twitter_markdown(raw_markdown: str) -> str:
     try:
         response = await asyncio.to_thread(
             client.models.generate_content,
-            model='gemini-2.5-flash',
+            model='gemini-3.6-flash',
             contents=[prompt + "\n" + raw_markdown]
         )
         return response.text.strip()
