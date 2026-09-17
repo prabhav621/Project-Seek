@@ -41,7 +41,7 @@ def extract_subtitles(url: str) -> str:
         transcript_data = transcript.fetch()
         
         # Combine text
-        full_text = " ".join([t['text'] for t in transcript_data])
+        full_text = " ".join([t['text'] if isinstance(t, dict) else t.text for t in transcript_data])
         
         return full_text
         
