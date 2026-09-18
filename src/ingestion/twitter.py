@@ -60,9 +60,11 @@ async def clean_twitter_markdown(raw_markdown: str) -> str:
     """
     
     try:
+        from src.config import ModelTier
+        from src.utils.retry import generate_content_with_retry
         response = await asyncio.to_thread(
-            client.models.generate_content,
-            model='gemini-3.6-flash',
+            generate_content_with_retry, client,
+            model=ModelTier.FLASH_LITE.value,
             contents=[prompt + "\n" + raw_markdown]
         )
         return response.text.strip()

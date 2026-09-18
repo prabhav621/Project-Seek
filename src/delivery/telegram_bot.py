@@ -11,6 +11,7 @@ sys.path.append(str(root_path))
 
 from src.config import settings
 from src.db.session import SessionLocal
+from sqlalchemy import select
 from src.db.models import DailyItem, InterestVector
 from src.intelligence.reply_analyzer import ReplyAnalyzer
 from src.intelligence.drift_engine import update_drift
@@ -67,7 +68,7 @@ async def process_individual_background(urls: list, chat_id: int, bot):
     success_count = 0
     fail_count = 0
     
-    with SessionLocal() as db:
+    async with SessionLocal() as db:
         parser = UniversalLinkParser(db)
         for url in urls:
             try:
@@ -79,7 +80,7 @@ async def process_individual_background(urls: list, chat_id: int, bot):
                 print(f"Failed: {url} - {e}")
             
             # RATE LIMITING: 6 seconds per item guarantees we stay under Gemini's 15 RPM free tier limit
-            # and prevents Supabase connection spikes or Telegram spam limits.
+            # and prevents PostgreSQL connection spikes or Telegram spam limits.
             await asyncio.sleep(6)
             
     await bot.send_message(chat_id=chat_id, text=f"✅ Batch ingestion completed!\nSuccess: {success_count}\nFailed: {fail_count}")
@@ -116,7 +117,7 @@ async def process_playlist_background(playlist_url: str, chat_id: int, bot):
         success_count = 0
         fail_count = 0
         
-        with SessionLocal() as db:
+        async with SessionLocal() as db:
             parser = UniversalLinkParser(db)
             for v_url in video_urls:
                 try:
@@ -139,15 +140,15 @@ async def handle_reaction(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not reaction:
         return
         
-    with SessionLocal() as db:
-        latest_item = db.query(DailyItem).order_by(DailyItem.created_at.desc()).first()
+    async with SessionLocal() as db:
+        latest_item = (await db.execute(select(DailyItem).order_by(DailyItem.created_at.desc()))).scalars().first()
         if latest_item:
-            items = db.query(DailyItem).filter(DailyItem.forge_date == latest_item.forge_date).all()
+            items = (await db.execute(select(DailyItem).filter(DailyItem.forge_date == latest_item.forge_date))).scalars().all()
             for item in items:
                 if item.engagement == 'pending':
                     item.engagement = 'read'
                     update_drift(db, str(item.id), 'read')
-            db.commit()
+            await db.commit()
 
 
 async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -163,12 +164,12 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
         if chat.is_finished:
             summary = chat.summarize_conversation()
             
-            with SessionLocal() as db:
+            async with SessionLocal() as db:
                 for topic in summary.domain_shifts:
-                    matched_domain = db.query(InterestVector).filter(InterestVector.domain == topic).first()
+                    matched_domain = (await db.execute(select(InterestVector).filter(InterestVector.domain == topic))).scalars().first()
                     if matched_domain:
                         matched_domain.weight = min(1.0, matched_domain.weight + 0.05)
-                db.commit()
+                await db.commit()
             
             context.user_data['seek_chat'] = None
             await message.reply_text(f"[Seek Chat Concluded]\nSummary: {summary.summary}")
@@ -178,8 +179,8 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
         original_item_text = message.reply_to_message.text
         reply_text = message.text
 
-        with SessionLocal() as db:
-            latest_item = db.query(DailyItem).order_by(DailyItem.created_at.desc()).first()
+        async with SessionLocal() as db:
+            latest_item = (await db.execute(select(DailyItem).order_by(DailyItem.created_at.desc()))).scalars().first()
             if not latest_item:
                 await message.reply_text("No Daily Forge found to associate this reply with.")
                 return
@@ -204,10 +205,10 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
             latest_item.engagement = engagement
             latest_item.founder_response = reply_text
             latest_item.reply_analysis = analysis_dict
-            db.commit()
+            await db.commit()
 
             if analysis.new_question_asked:
-                top_domains_objs = db.query(InterestVector).order_by(InterestVector.weight.desc()).limit(5).all()
+                top_domains_objs = (await db.execute(select(InterestVector).order_by(InterestVector.weight.desc()).limit(5))).scalars().all()
                 top_domains = [td.domain for td in top_domains_objs]
                 context_item = DailyItemResponse.model_validate(latest_item)
                 
@@ -220,29 +221,13 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 await message.reply_text("Your insights have been logged. The Forge adjusts.")
 
 
-import os
-from aiohttp import web
-
-async def health_check(request):
-    return web.Response(text="Project Seek Bot is ALIVE and healthy.")
-
-async def start_dummy_server(application: Application):
-    port = int(os.environ.get("PORT", 7860))
-    app = web.Application()
-    app.router.add_get('/', health_check)
-    runner = web.AppRunner(app)
-    await runner.setup()
-    site = web.TCPSite(runner, '0.0.0.0', port)
-    await site.start()
-    print(f"Dummy web server listening on port {port} for Render health checks.")
-
 def main():
     token = settings.telegram_bot_token
     if not token:
         print("Error: telegram_bot_token is missing from configuration.")
         return
 
-    application = Application.builder().token(token).post_init(start_dummy_server).build()
+    application = Application.builder().token(token).build()
 
     url_filter = (
         filters.Entity(MessageEntityType.URL) | 

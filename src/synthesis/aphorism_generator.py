@@ -1,3 +1,4 @@
+from src.utils.retry import generate_content_with_retry
 from google import genai
 from google.genai import types
 from pydantic import BaseModel, Field
@@ -13,7 +14,7 @@ class AphorismResponse(BaseModel):
 
 def generate_aphorism(domain: str) -> AphorismResponse:
     """
-    Selects and contextualizes an ancient philosophy quote for modern tech/business (Gemini 2.5 Flash).
+    Selects and contextualizes an ancient philosophy quote for modern tech/business (configured via ModelTier in config.py).
     """
     model_name = settings.get_model_for_task(TaskType.APHORISM).value
     prompt = f"""
@@ -23,7 +24,7 @@ def generate_aphorism(domain: str) -> AphorismResponse:
     
     Output strictly as structured JSON matching the requested schema.
     """
-    response = client.models.generate_content(
+    response = generate_content_with_retry(client, 
         model=model_name,
         contents=prompt,
         config=types.GenerateContentConfig(
@@ -34,7 +35,7 @@ def generate_aphorism(domain: str) -> AphorismResponse:
     )
     return AphorismResponse.model_validate_json(response.text)
 
-def contextulize_aphorism(quote_text: str, quote_author: str, domain: str) -> AphorismResponse:
+def contextualize_aphorism(quote_text: str, quote_author: str, domain: str) -> AphorismResponse:
     """
     Contextualizes a pre-selected ancient philosophy quote for modern tech/business.
     """
@@ -48,7 +49,7 @@ def contextulize_aphorism(quote_text: str, quote_author: str, domain: str) -> Ap
     
     Output strictly as structured JSON matching the requested schema. Ensure quote_text and quote_author are preserved.
     """
-    response = client.models.generate_content(
+    response = generate_content_with_retry(client, 
         model=model_name,
         contents=prompt,
         config=types.GenerateContentConfig(

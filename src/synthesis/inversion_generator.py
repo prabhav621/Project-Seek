@@ -1,3 +1,4 @@
+from src.utils.retry import generate_content_with_retry
 from google import genai
 from google.genai import types
 from pydantic import BaseModel, Field
@@ -10,7 +11,7 @@ class InversionResponse(BaseModel):
 
 def generate_inversion_prompt(domain: str) -> InversionResponse:
     """
-    Generates 'Devil's Advocate' prompts challenging the Founder's comfort zones (Gemini 2.5 Flash).
+    Generates 'Devil's Advocate' prompts challenging the Founder's comfort zones (configured via ModelTier in config.py).
     """
     model_name = settings.get_model_for_task(TaskType.INVERSION_PROMPT).value
     prompt = f"""
@@ -22,7 +23,7 @@ def generate_inversion_prompt(domain: str) -> InversionResponse:
     
     Output strictly as structured JSON matching the requested schema.
     """
-    response = client.models.generate_content(
+    response = generate_content_with_retry(client, 
         model=model_name,
         contents=prompt,
         config=types.GenerateContentConfig(

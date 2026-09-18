@@ -28,7 +28,7 @@ def extract_json_from_js(file_path: str) -> List[Dict[str, Any]]:
     json_str = content[start_idx:]
     return json.loads(json_str)
 
-def process_twitter_export(file_path: str, rate_limit_delay: float = 0.1):
+async def process_twitter_export(file_path: str, rate_limit_delay: float = 0.1):
     """
     Parses tweets.js or bookmarks.js and pushes to genesis ingestion.
     """
@@ -44,10 +44,8 @@ def process_twitter_export(file_path: str, rate_limit_delay: float = 0.1):
         print(f"Error parsing JSON from {file_path}: {e}")
         return
 
-    db = SessionLocal()
     added_count = 0
-
-    try:
+    async with SessionLocal() as db:
         for item in data:
             tweet_id = None
             text = None
@@ -90,13 +88,12 @@ def process_twitter_export(file_path: str, rate_limit_delay: float = 0.1):
 
             time.sleep(rate_limit_delay)
 
-    finally:
-        db.close()
-
     print(f"Finished processing Twitter export. Added {added_count} new items.")
+
+import asyncio
 
 if __name__ == "__main__":
     if len(sys.argv) < 2:
         print("Usage: python twitter_export.py <path_to_tweets_or_bookmarks.js>")
     else:
-        process_twitter_export(sys.argv[1])
+        asyncio.run(process_twitter_export(sys.argv[1]))

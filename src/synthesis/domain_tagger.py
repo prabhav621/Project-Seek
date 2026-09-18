@@ -1,10 +1,11 @@
+from src.utils.retry import generate_content_with_retry
 from typing import List, Tuple, Optional
 from sqlalchemy.orm import Session
 from sqlalchemy import select
 from src.db.models import InterestVector
 from src.ingestion.embedder import get_embedder
 from google import genai
-from src.config import settings
+from src.config import settings, TaskType
 
 class DomainTagger:
     """
@@ -45,8 +46,8 @@ class DomainTagger:
         Embeds it and inserts it into the database as a new InterestVector.
         """
         prompt = f"Extract the core domain or theme of the following text in exactly 2 to 3 words. Return ONLY the 2-3 words, lowercase, spaces replaced with underscores (e.g., 'quantum_computing', 'longevity_research').\n\nText:\n{raw_text[:3000]}"
-        response = self.client.models.generate_content(
-            model=settings.flash_model,
+        response = generate_content_with_retry(self.client, 
+            model=settings.get_model_for_task(TaskType.TAGGING),
             contents=prompt
         )
         new_domain = response.text.strip().lower().replace(" ", "_")

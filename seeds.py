@@ -1,16 +1,20 @@
 import os
 import sys
-from sqlalchemy import create_engine
+import asyncio
+from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession
 from sqlalchemy.orm import sessionmaker
+from sqlalchemy import select
 
 # Ensure src is in the path
 sys.path.insert(0, os.path.abspath(os.path.dirname(__file__)))
 
 from src.db.models import InterestVector
 
-DATABASE_URL = os.getenv("DATABASE_URL", "postgresql://postgres:postgres@localhost:5432/postgres")
-engine = create_engine(DATABASE_URL)
-SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
+DATABASE_URL = os.getenv("DATABASE_URL", "postgresql+asyncpg://postgres:postgres@localhost:5432/postgres")
+if DATABASE_URL.startswith("postgresql://"):
+    DATABASE_URL = DATABASE_URL.replace("postgresql://", "postgresql+asyncpg://", 1)
+engine = create_async_engine(DATABASE_URL)
+SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine, class_=AsyncSession)
 
 INITIAL_DOMAINS = [
     {'domain': 'system_architecture', 'weight': 0.85, 'is_blind_spot': False, 'is_graveyard': False},
@@ -26,22 +30,20 @@ INITIAL_DOMAINS = [
     {'domain': 'political_systems', 'weight': 0.30, 'is_blind_spot': True, 'is_graveyard': True},
 ]
 
-def seed_db():
-    db = SessionLocal()
-    try:
-        for domain_data in INITIAL_DOMAINS:
-            # Check if domain already exists
-            existing = db.query(InterestVector).filter_by(domain=domain_data['domain']).first()
-            if not existing:
-                vector = InterestVector(**domain_data)
-                db.add(vector)
-        db.commit()
-        print("Database seeded successfully.")
-    except Exception as e:
-        db.rollback()
-        print(f"Error seeding database: {e}")
-    finally:
-        db.close()
+async def seed_db():
+    async with SessionLocal() as db:
+        try:
+            for domain_data in INITIAL_DOMAINS:
+                # Check if domain already exists
+                existing = (await db.execute(select(InterestVector).filter_by(domain=domain_data['domain']))).scalars().first()
+                if not existing:
+                    vector = InterestVector(**domain_data)
+                    db.add(vector)
+            await db.commit()
+            print("Database seeded successfully.")
+        except Exception as e:
+            await db.rollback()
+            print(f"Error seeding database: {e}")
 
 if __name__ == "__main__":
-    seed_db()
+    asyncio.run(seed_db())

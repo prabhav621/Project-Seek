@@ -11,7 +11,7 @@ from src.ingestion.parser import UniversalLinkParser
 from src.db.session import SessionLocal
 from src.db.models import ContentItem
 
-def parse_bookmarks(file_path: str, rate_limit_delay: float = 0.1):
+async def parse_bookmarks(file_path: str, rate_limit_delay: float = 0.1):
     """
     Parses a standard Chrome/Edge bookmarks HTML file.
     Extracts URLs and pushes them as genesis ContentItems.
@@ -26,10 +26,9 @@ def parse_bookmarks(file_path: str, rate_limit_delay: float = 0.1):
     links = soup.find_all('a')
     print(f"Found {len(links)} links in bookmarks.")
 
-    db = SessionLocal()
     added_count = 0
 
-    try:
+    async with SessionLocal() as db:
         for link in links:
             url = link.get('href')
             title = link.text.strip()
@@ -62,14 +61,13 @@ def parse_bookmarks(file_path: str, rate_limit_delay: float = 0.1):
 
             # Rate limit to avoid overwhelming the DB or downstream triggers
             time.sleep(rate_limit_delay)
-
-    finally:
-        db.close()
         
     print(f"Finished parsing bookmarks. Added {added_count} new items.")
+
+import asyncio
 
 if __name__ == "__main__":
     if len(sys.argv) < 2:
         print("Usage: python bookmarks_parser.py <path_to_bookmarks.html>")
     else:
-        parse_bookmarks(sys.argv[1])
+        asyncio.run(parse_bookmarks(sys.argv[1]))

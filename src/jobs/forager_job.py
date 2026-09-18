@@ -1,3 +1,4 @@
+from src.utils.retry import generate_content_with_retry
 import os
 import sys
 import asyncio
@@ -8,10 +9,11 @@ root_path = Path(__file__).resolve().parent.parent.parent
 sys.path.append(str(root_path))
 
 from src.db.session import SessionLocal
+from sqlalchemy import select
 from src.db.models import InterestVector, ContentItem
 from src.ingestion.embedder import get_embedder
 from src.synthesis.domain_tagger import DomainTagger
-from src.config import settings
+from src.config import settings, TaskType
 from google import genai
 from duckduckgo_search import DDGS
 from src.ingestion.parser import UniversalLinkParser
@@ -20,22 +22,21 @@ async def run_forager():
     print("Initiating Autonomous Forager...")
     client = genai.Client(api_key=settings.gemini_api_key)
     
-    with SessionLocal() as db:
+    async with SessionLocal() as db:
         # Get target domains (blind spots or high momentum)
-        targets = db.query(InterestVector).filter(
-            (InterestVector.is_blind_spot == True) | (InterestVector.momentum > 0.5)
-        ).order_by(InterestVector.weight.desc()).limit(2).all()
+        targets = (await db.execute(select(InterestVector).filter(            (InterestVector.is_blind_spot == True) | (InterestVector.momentum > 0.5)
+       ).order_by(InterestVector.weight.desc()).limit(2))).scalars().all()
         
         if not targets:
-            targets = db.query(InterestVector).order_by(InterestVector.weight.desc()).limit(2).all()
+            targets = (await db.execute(select(InterestVector).order_by(InterestVector.weight.desc()).limit(2))).scalars().all()
             
         domains = [t.domain.replace('_', ' ') for t in targets]
         print(f"Targeting domains: {domains}")
         
         # Ask Gemini to generate search queries
         prompt = f"Generate 2 highly specific, intellectual Google search queries to find insightful articles or essays about: {', '.join(domains)}. Return just the 2 queries separated by newlines."
-        response = client.models.generate_content(
-            model=settings.flash_model,
+        response = generate_content_with_retry(client, 
+            model=settings.get_model_for_task(TaskType.TAGGING).value,
             contents=prompt
         )
         

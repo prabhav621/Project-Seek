@@ -1,3 +1,4 @@
+from src.utils.retry import generate_content_with_retry
 from google import genai
 from google.genai import types
 from pydantic import BaseModel, Field
@@ -10,7 +11,7 @@ class SuggestionHookResponse(BaseModel):
 
 def generate_suggestion_hook(title: str, domain: str) -> SuggestionHookResponse:
     """
-    Generates a short 2-line "why this" hook for a curated link (Gemini 2.5 Flash-Lite).
+    Generates a short 2-line "why this" hook for a curated link (configured via ModelTier in config.py).
     """
     model_name = settings.get_model_for_task(TaskType.SUGGESTION_HOOKS).value
     prompt = f"""
@@ -22,7 +23,7 @@ def generate_suggestion_hook(title: str, domain: str) -> SuggestionHookResponse:
     
     Output strictly as structured JSON matching the requested schema.
     """
-    response = client.models.generate_content(
+    response = generate_content_with_retry(client, 
         model=model_name,
         contents=prompt,
         config=types.GenerateContentConfig(

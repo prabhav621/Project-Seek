@@ -1,3 +1,4 @@
+from src.utils.retry import generate_content_with_retry
 import logging
 from typing import List, Optional
 
@@ -115,7 +116,7 @@ class SeekChat:
         )
         
         try:
-            response = self.client.models.generate_content(
+            response = generate_content_with_retry(self.client, 
                 model=self.model,
                 contents=prompt,
                 config=types.GenerateContentConfig(
@@ -126,11 +127,7 @@ class SeekChat:
                 )
             )
             
-            try:
-                return DriftSummary.model_validate_json(response.text)
-            except AttributeError:
-                # Fallback for Pydantic v1
-                return DriftSummary.parse_raw(response.text)
+            return DriftSummary.model_validate_json(response.text)
                 
         except Exception as e:
             logger.error(f"Failed to summarize conversation: {e}")

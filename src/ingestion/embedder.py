@@ -17,7 +17,9 @@ class GeminiEmbedder:
         self.model_id = "gemini-embedding-2"
 
     def embed_text(self, text: str) -> List[float]:
-        response = self.client.models.embed_content(
+        from src.utils.retry import embed_content_with_retry
+        response = embed_content_with_retry(
+            self.client,
             model=self.model_id,
             contents=text,
             config={"output_dimensionality": 768}
@@ -25,7 +27,9 @@ class GeminiEmbedder:
         return response.embeddings[0].values
 
     def embed_batch(self, texts: List[str]) -> List[List[float]]:
-        response = self.client.models.embed_content(
+        from src.utils.retry import embed_content_with_retry
+        response = embed_content_with_retry(
+            self.client,
             model=self.model_id,
             contents=texts,
             config={"output_dimensionality": 768}

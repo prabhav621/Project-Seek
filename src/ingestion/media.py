@@ -1,3 +1,4 @@
+from src.utils.retry import generate_content_with_retry
 import os
 import logging
 from typing import Optional
@@ -14,7 +15,7 @@ class MediaTranscriber:
 
     def transcribe(self, file_path: str) -> Optional[str]:
         """
-        Transcribe an audio or video file using Gemini 2.5 Flash.
+        Transcribe an audio or video file using Gemini (configured via ModelTier in config.py).
         Falls back to local faster-whisper on failure.
         """
         if not os.path.exists(file_path):
@@ -27,15 +28,16 @@ class MediaTranscriber:
             return self._transcribe_with_whisper(file_path)
 
     def _transcribe_with_gemini(self, file_path: str) -> str:
-        """Uses Gemini 2.5 Flash native audio/video understanding via google-genai SDK."""
+        """Uses Gemini native audio/video understanding via google-genai SDK (configured via ModelTier in config.py)."""
         # Upload the file to Gemini's File API
         gemini_file = self.gemini_client.files.upload(file=file_path)
         
         try:
             prompt = "Please provide a highly accurate transcription of the audio in this file. Output ONLY the transcript without any extra commentary or formatting."
             
-            response = self.gemini_client.models.generate_content(
-                model='gemini-3.6-flash',
+            from src.config import ModelTier
+            response = generate_content_with_retry(self.gemini_client, 
+                model=ModelTier.FLASH.value,
                 contents=[
                     gemini_file,
                     prompt

@@ -5,6 +5,8 @@ import tempfile
 import logging
 from pathlib import Path
 from dotenv import load_dotenv
+import asyncio
+from sqlalchemy import select
 
 # Setup paths
 project_root = Path(__file__).resolve().parent.parent.parent
@@ -78,7 +80,7 @@ def download_audio(url: str, output_dir: str) -> str:
             raise FileNotFoundError(f"Failed to download audio for {url}")
         return filename
 
-def process_video(item: dict, db) -> bool:
+async def process_video(item: dict, db) -> bool:
     """
     Process a single video item from the liked playlist.
     Returns True if the item was processed (or attempted), False if it was already in the DB (skipped).
@@ -89,7 +91,7 @@ def process_video(item: dict, db) -> bool:
     source_url = f"https://www.youtube.com/watch?v={video_id}"
     
     # Check if already processed
-    existing = db.query(ContentItem).filter(ContentItem.source_url == source_url).first()
+    existing = (await db.execute(select(ContentItem).filter(ContentItem.source_url == source_url))).scalars().first()
     if existing:
         logger.info(f"Skipping already ingested video: {title} ({source_url})")
         return False
@@ -110,8 +112,8 @@ def process_video(item: dict, db) -> bool:
     )
     
     db.add(content_item)
-    db.commit()
-    db.refresh(content_item)
+    await db.commit()
+    await db.refresh(content_item)
     
     try:
         with tempfile.TemporaryDirectory() as tmpdir:
@@ -134,58 +136,56 @@ def process_video(item: dict, db) -> bool:
             content_item.extraction_status = "completed"
             content_item.processed = True
             
-            db.commit()
+            await db.commit()
             logger.info(f"Successfully processed and embedded: {title}")
             
     except Exception as e:
         logger.error(f"Failed to process video {video_id}: {e}")
-        db.rollback()
+        await db.rollback()
         # Mark as failed in DB
-        failed_item = db.query(ContentItem).filter(ContentItem.id == content_item.id).first()
+        failed_item = (await db.execute(select(ContentItem).filter(ContentItem.id == content_item.id))).scalars().first()
         if failed_item:
             failed_item.extraction_status = "failed"
-            db.commit()
+            await db.commit()
             
     return True
 
-def sync_liked_videos(scan_all=False):
+async def sync_liked_videos(scan_all=False):
     youtube = get_youtube_client()
-    db = SessionLocal()
-    
-    try:
-        logger.info("Fetching 'Liked Videos' playlist...")
-        request = youtube.playlistItems().list(
-            part="snippet,contentDetails",
-            playlistId="LL",
-            maxResults=50
-        )
-        
-        while request is not None:
-            response = request.execute()
-            items = response.get("items", [])
+    async with SessionLocal() as db:
+        try:
+            logger.info("Fetching 'Liked Videos' playlist...")
+            request = youtube.playlistItems().list(
+                part="snippet,contentDetails",
+                playlistId="LL",
+                maxResults=50
+            )
             
-            if not items:
-                logger.info("No items found in playlist.")
-                break
+            while request is not None:
+                response = request.execute()
+                items = response.get("items", [])
                 
-            for item in items:
-                was_processed = process_video(item, db)
-                if not was_processed and not scan_all:
-                    logger.info("Found an already processed video. Assuming all older videos are processed. Stopping sync.")
-                    return
-            
-            # Fetch next page
-            request = youtube.playlistItems().list_next(request, response)
-            
-    except Exception as e:
-        logger.error(f"An error occurred during sync: {e}")
-    finally:
-        db.close()
-        logger.info("Sync job finished.")
+                if not items:
+                    logger.info("No items found in playlist.")
+                    break
+                    
+                for item in items:
+                    was_processed = await process_video(item, db)
+                    if not was_processed and not scan_all:
+                        logger.info("Found an already processed video. Assuming all older videos are processed. Stopping sync.")
+                        return
+                
+                # Fetch next page
+                request = youtube.playlistItems().list_next(request, response)
+                
+        except Exception as e:
+            logger.error(f"An error occurred during sync: {e}")
+        finally:
+            logger.info("Sync job finished.")
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Sync YouTube Liked Videos to Ingestion Pipeline")
     parser.add_argument("--all", action="store_true", help="Scan the entire playlist instead of stopping at the first existing video")
     args = parser.parse_args()
     
-    sync_liked_videos(scan_all=args.all)
+    asyncio.run(sync_liked_videos(scan_all=args.all))

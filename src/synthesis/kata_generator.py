@@ -20,7 +20,7 @@ class QuickKataResponse(BaseModel):
 
 def generate_deep_kata(raw_content: str, domain: str) -> DeepKataResponse:
     """
-    Generates a Deep Kata (Gemini 2.5 Pro) based on raw content and a target domain.
+    Generates a Deep Kata (configured via ModelTier in config.py) based on raw content and a target domain.
     Deep katas need a scenario, crisis, architecture, and question.
     """
     model_name = settings.get_model_for_task(TaskType.DEEP_KATA).value
@@ -34,7 +34,9 @@ def generate_deep_kata(raw_content: str, domain: str) -> DeepKataResponse:
     
     Output strictly as structured JSON matching the requested schema.
     """
-    response = client.models.generate_content(
+    from src.utils.retry import generate_content_with_retry
+    response = generate_content_with_retry(
+        client,
         model=model_name,
         contents=prompt,
         config=types.GenerateContentConfig(
@@ -47,7 +49,7 @@ def generate_deep_kata(raw_content: str, domain: str) -> DeepKataResponse:
 
 def generate_quick_kata(raw_content: str, domain: str) -> QuickKataResponse:
     """
-    Generates a Quick Kata (Gemini 2.5 Flash) based on raw content and a target domain.
+    Generates a Quick Kata (configured via ModelTier in config.py) based on raw content and a target domain.
     Quick katas are shorter 2-sentence constraints.
     """
     model_name = settings.get_model_for_task(TaskType.QUICK_KATA).value
@@ -61,7 +63,9 @@ def generate_quick_kata(raw_content: str, domain: str) -> QuickKataResponse:
     
     Output strictly as structured JSON matching the requested schema.
     """
-    response = client.models.generate_content(
+    from src.utils.retry import generate_content_with_retry
+    response = generate_content_with_retry(
+        client,
         model=model_name,
         contents=prompt,
         config=types.GenerateContentConfig(
