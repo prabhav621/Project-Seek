@@ -3,11 +3,11 @@ from google import genai
 from src.config import settings
 
 class Embedder(Protocol):
-    def embed_text(self, text: str) -> List[float]:
+    async def embed_text(self, text: str) -> List[float]:
         """Embeds text and returns a float vector."""
         ...
     
-    def embed_batch(self, texts: List[str]) -> List[List[float]]:
+    async def embed_batch(self, texts: List[str]) -> List[List[float]]:
         """Embeds a batch of texts."""
         ...
 
@@ -16,9 +16,9 @@ class GeminiEmbedder:
         self.client = genai.Client(api_key=settings.gemini_api_key)
         self.model_id = "gemini-embedding-2"
 
-    def embed_text(self, text: str) -> List[float]:
-        from src.utils.retry import embed_content_with_retry
-        response = embed_content_with_retry(
+    async def embed_text(self, text: str) -> List[float]:
+        from src.utils.retry import embed_content_async_with_retry
+        response = await embed_content_async_with_retry(
             self.client,
             model=self.model_id,
             contents=text,
@@ -26,9 +26,9 @@ class GeminiEmbedder:
         )
         return response.embeddings[0].values
 
-    def embed_batch(self, texts: List[str]) -> List[List[float]]:
-        from src.utils.retry import embed_content_with_retry
-        response = embed_content_with_retry(
+    async def embed_batch(self, texts: List[str]) -> List[List[float]]:
+        from src.utils.retry import embed_content_async_with_retry
+        response = await embed_content_async_with_retry(
             self.client,
             model=self.model_id,
             contents=texts,

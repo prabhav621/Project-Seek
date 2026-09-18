@@ -6,6 +6,7 @@ class ModelTier(str, Enum):
     PRO = "gemini-3.1-pro"
     FLASH = "gemini-3.8-flash"
     FLASH_LITE = "gemini-3.5-flash-lite"
+    EMBEDDING = "gemini-embedding-2"
 
 class TaskType(str, Enum):
     DEEP_KATA = "deep_kata"

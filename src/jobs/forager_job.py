@@ -1,4 +1,4 @@
-from src.utils.retry import generate_content_with_retry
+from src.utils.retry import generate_content_async_with_retry
 import os
 import sys
 import asyncio
@@ -11,11 +11,9 @@ sys.path.append(str(root_path))
 from src.db.session import SessionLocal
 from sqlalchemy import select
 from src.db.models import InterestVector, ContentItem
-from src.ingestion.embedder import get_embedder
-from src.synthesis.domain_tagger import DomainTagger
 from src.config import settings, TaskType
 from google import genai
-from duckduckgo_search import DDGS
+from duckduckgo_search import AsyncDDGS
 from src.ingestion.parser import UniversalLinkParser
 
 async def run_forager():
@@ -24,8 +22,9 @@ async def run_forager():
     
     async with SessionLocal() as db:
         # Get target domains (blind spots or high momentum)
-        targets = (await db.execute(select(InterestVector).filter(            (InterestVector.is_blind_spot == True) | (InterestVector.momentum > 0.5)
-       ).order_by(InterestVector.weight.desc()).limit(2))).scalars().all()
+        targets = (await db.execute(select(InterestVector).filter(
+            (InterestVector.is_blind_spot == True) | (InterestVector.momentum > 0.5)
+        ).order_by(InterestVector.weight.desc()).limit(2))).scalars().all()
         
         if not targets:
             targets = (await db.execute(select(InterestVector).order_by(InterestVector.weight.desc()).limit(2))).scalars().all()
@@ -35,7 +34,7 @@ async def run_forager():
         
         # Ask Gemini to generate search queries
         prompt = f"Generate 2 highly specific, intellectual Google search queries to find insightful articles or essays about: {', '.join(domains)}. Return just the 2 queries separated by newlines."
-        response = generate_content_with_retry(client, 
+        response = await generate_content_async_with_retry(client, 
             model=settings.get_model_for_task(TaskType.TAGGING).value,
             contents=prompt
         )
@@ -43,34 +42,43 @@ async def run_forager():
         queries = [q.strip().strip('"').strip('- ') for q in response.text.strip().split('\n') if q.strip()]
         
         found_urls = []
-        ddgs = DDGS()
+        ddgs = AsyncDDGS()
         
         print(f"Generated queries: {queries}")
         
         # Track A: Search for articles
         for query in queries:
-            results = ddgs.text(query, max_results=2)
+            results = await ddgs.text(query, max_results=2)
             for r in results:
                 found_urls.append((r['href'], 'article'))
                 
         # Track B: Search for YouTube video
         yt_query = f"in-depth analysis {domains[0]}"
-        yt_results = ddgs.videos(yt_query, max_results=1)
+        yt_results = await ddgs.videos(yt_query, max_results=1)
         for r in yt_results:
             if 'youtube.com' in r.get('content', ''):
                 found_urls.append((r['content'], 'youtube'))
                 
         print(f"Found {len(found_urls)} URLs to forage.")
-        
-        # Pass them into the UniversalLinkParser
-        parser = UniversalLinkParser(db_session=db)
-        for url, hint in found_urls:
+
+    # Pass them into the UniversalLinkParser using a pipeline and Semaphore
+    semaphore = asyncio.Semaphore(5)
+
+    async def process_with_semaphore(url, hint):
+        async with semaphore:
             print(f"Foraging: {url}")
-            try:
-                await parser.process_url(url, ingestion_mode='auto')
-                print(f"Successfully ingested {url}")
-            except Exception as e:
-                print(f"Failed to ingest {url}: {e}")
+            # Use a new DB session for each task since AsyncSession is not thread-safe for concurrent operations
+            async with SessionLocal() as local_db:
+                parser = UniversalLinkParser(db_session=local_db)
+                try:
+                    await parser.process_url(url, ingestion_mode='auto')
+                    print(f"Successfully ingested {url}")
+                except Exception as e:
+                    print(f"Failed to ingest {url}: {e}")
+
+    tasks = [asyncio.create_task(process_with_semaphore(url, hint)) for url, hint in found_urls]
+    await asyncio.gather(*tasks)
 
 if __name__ == '__main__':
     asyncio.run(run_forager())
+

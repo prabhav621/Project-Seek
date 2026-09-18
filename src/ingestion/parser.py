@@ -1,7 +1,8 @@
 import urllib.parse
 from enum import Enum
 import asyncio
-from sqlalchemy.orm import Session
+from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy import select
 from src.db.models import ContentItem
 from src.ingestion.scraper import scrape_article
 from src.ingestion.twitter import scrape_twitter_thread
@@ -17,7 +18,7 @@ class SourceType(Enum):
     ARTICLE = "article"
 
 class UniversalLinkParser:
-    def __init__(self, db_session: Session):
+    def __init__(self, db_session: AsyncSession):
         self.db = db_session
         self.embedder = get_embedder()
         self.tagger = DomainTagger(self.db)
@@ -46,7 +47,7 @@ class UniversalLinkParser:
         raw_text = ""
         
         # 1. Check if already exists
-        existing = self.db.query(ContentItem).filter(ContentItem.source_url == url).first()
+        existing = (await self.db.execute(select(ContentItem).filter(ContentItem.source_url == url))).scalar_one_or_none()
         if existing:
             print(f"URL already ingested: {url}")
             return existing
@@ -66,10 +67,10 @@ class UniversalLinkParser:
             raise ValueError(f"Failed to extract meaningful text from {url}")
             
         # 3. Embed Text
-        embedding = self.embedder.embed_text(raw_text)
+        embedding = await self.embedder.embed_text(raw_text)
         
         # 4. Tag Domains (This will trigger Genesis if novel)
-        domains = self.tagger.tag_content(embedding, raw_text=raw_text)
+        domains = await self.tagger.tag_content(embedding, raw_text=raw_text)
         
         # 5. Save to DB
         item = ContentItem(
@@ -81,6 +82,6 @@ class UniversalLinkParser:
             processed=False
         )
         self.db.add(item)
-        self.db.commit()
+        await self.db.commit()
         
         return item
