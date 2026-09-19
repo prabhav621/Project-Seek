@@ -1,5 +1,6 @@
 import sys
 import asyncio
+import traceback
 from pathlib import Path
 from telegram import Update
 from telegram.constants import MessageEntityType
@@ -18,6 +19,128 @@ from src.intelligence.drift_engine import update_drift
 from src.delivery.seek_chat import SeekChat
 from src.models import DailyItemResponse
 
+# Global ingestion queue to serialize all playlist/batch work
+_ingestion_queue = asyncio.Queue()
+_worker_running = False
+
+
+async def _ingestion_worker(bot):
+    """Single background worker that processes ingestion jobs sequentially.
+    This prevents multiple playlists from competing for API rate limits."""
+    global _worker_running
+    _worker_running = True
+    while True:
+        job = await _ingestion_queue.get()
+        try:
+            job_type = job.get("type")
+            chat_id = job.get("chat_id")
+            if job_type == "playlist":
+                await _process_playlist(job["url"], chat_id, bot)
+            elif job_type == "individual":
+                await _process_individual(job["urls"], chat_id, bot)
+        except Exception as e:
+            print(f"Ingestion worker error: {e}")
+            traceback.print_exc()
+            try:
+                await bot.send_message(chat_id=job.get("chat_id"), text=f"⚠️ Ingestion job failed: {str(e)[:200]}")
+            except Exception:
+                pass
+        finally:
+            _ingestion_queue.task_done()
+
+
+async def _process_individual(urls: list, chat_id: int, bot):
+    from src.ingestion.parser import UniversalLinkParser
+
+    success_count = 0
+    fail_count = 0
+
+    for url in urls:
+        # Fresh DB session per URL to prevent connection timeout
+        try:
+            async with SessionLocal() as db:
+                parser = UniversalLinkParser(db)
+                await parser.process_url(url, ingestion_mode='manual')
+                success_count += 1
+                print(f"Ingested: {url}")
+        except Exception as e:
+            fail_count += 1
+            print(f"Failed: {url} - {e}")
+
+        await asyncio.sleep(6)
+
+    try:
+        await bot.send_message(chat_id=chat_id, text=f"✅ Batch ingestion completed!\nSuccess: {success_count}\nFailed: {fail_count}")
+    except Exception:
+        print(f"Batch done: {success_count} success, {fail_count} failed (couldn't notify Telegram)")
+
+
+async def _process_playlist(playlist_url: str, chat_id: int, bot):
+    import yt_dlp
+
+    # Step 1: Extract video URLs from playlist (no API calls needed)
+    def extract_playlist():
+        ydl_opts = {'extract_flat': True, 'quiet': True, 'skip_download': True}
+        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+            return ydl.extract_info(playlist_url, download=False)
+
+    video_urls = []
+    try:
+        info = await asyncio.to_thread(extract_playlist)
+        if 'entries' in info:
+            for entry in info['entries']:
+                if entry and entry.get('url'):
+                    v_url = entry.get('url')
+                    if not v_url.startswith('http'):
+                        v_url = f"https://www.youtube.com/watch?v={v_url}"
+                    video_urls.append(v_url)
+    except Exception as e:
+        print(f"Failed to extract playlist: {e}")
+        try:
+            await bot.send_message(chat_id=chat_id, text=f"❌ Failed to extract playlist {playlist_url}: {str(e)[:200]}")
+        except Exception:
+            pass
+        return
+
+    total = len(video_urls)
+    print(f"Found {total} videos in playlist. Ingesting...")
+    try:
+        await bot.send_message(chat_id=chat_id, text=f"Found {total} videos in playlist. Starting sequential ingestion (rate-limited to 6s/video)...")
+    except Exception:
+        pass
+
+    # Step 2: Process each video with a FRESH db session per video
+    from src.ingestion.parser import UniversalLinkParser
+
+    success_count = 0
+    fail_count = 0
+
+    for i, v_url in enumerate(video_urls):
+        try:
+            async with SessionLocal() as db:
+                parser = UniversalLinkParser(db)
+                await parser.process_url(v_url, ingestion_mode='manual')
+                success_count += 1
+                print(f"[{i+1}/{total}] Ingested: {v_url}")
+        except Exception as e:
+            fail_count += 1
+            print(f"[{i+1}/{total}] Error on {v_url}: {e}")
+
+        await asyncio.sleep(6)
+
+        # Progress update every 20 videos
+        if (i + 1) % 20 == 0:
+            try:
+                await bot.send_message(chat_id=chat_id, text=f"📊 Progress: {i+1}/{total} processed ({success_count} success, {fail_count} failed)")
+            except Exception:
+                pass
+
+    try:
+        await bot.send_message(chat_id=chat_id, text=f"✅ Playlist ingestion completed!\nSuccess: {success_count}\nFailed: {fail_count}\nTotal: {total}")
+    except Exception:
+        print(f"Playlist done: {success_count} success, {fail_count} failed (couldn't notify Telegram)")
+
+
 async def handle_url(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """
     Message handler that intercepts any URLs forwarded to the bot,
@@ -26,9 +149,9 @@ async def handle_url(update: Update, context: ContextTypes.DEFAULT_TYPE):
     message = update.message
     if not message:
         return
-        
+
     urls = []
-    
+
     # Extract URLs from message text
     if message.text:
         entities = message.parse_entities([MessageEntityType.URL, MessageEntityType.TEXT_LINK])
@@ -37,7 +160,7 @@ async def handle_url(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 urls.append(text)
             elif entity.type == MessageEntityType.TEXT_LINK:
                 urls.append(entity.url)
-                
+
     # Extract URLs from message caption (e.g. if forwarded with an image)
     if message.caption:
         caption_entities = message.parse_caption_entities([MessageEntityType.URL, MessageEntityType.TEXT_LINK])
@@ -46,100 +169,38 @@ async def handle_url(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 urls.append(text)
             elif entity.type == MessageEntityType.TEXT_LINK:
                 urls.append(entity.url)
-                
+
     if urls:
         # Separate playlists from individual URLs
         playlists = [u for u in urls if "youtube.com" in u and "list=" in u]
         individual = [u for u in urls if u not in playlists]
-        
-        await message.reply_text(f"Intercepted {len(playlists)} playlists and {len(individual)} individual links.\nQueuing for background ingestion to respect API rate limits...")
-        
-        if playlists:
-            for p in playlists:
-                asyncio.create_task(process_playlist_background(p, message.chat_id, context.bot))
-                
+
+        queue_size = _ingestion_queue.qsize()
+        status = f" ({queue_size} jobs already queued)" if queue_size > 0 else ""
+
+        await message.reply_text(
+            f"Intercepted {len(playlists)} playlists and {len(individual)} individual links.\n"
+            f"Queuing for sequential background ingestion{status}..."
+        )
+
+        # Ensure the worker is running
+        global _worker_running
+        if not _worker_running:
+            asyncio.create_task(_ingestion_worker(context.bot))
+
+        # Queue jobs instead of spawning competing tasks
+        for p in playlists:
+            await _ingestion_queue.put({"type": "playlist", "url": p, "chat_id": message.chat_id})
+
         if individual:
-            asyncio.create_task(process_individual_background(individual, message.chat_id, context.bot))
-
-async def process_individual_background(urls: list, chat_id: int, bot):
-    from src.ingestion.parser import UniversalLinkParser
-    from src.db.session import SessionLocal
-    
-    success_count = 0
-    fail_count = 0
-    
-    async with SessionLocal() as db:
-        parser = UniversalLinkParser(db)
-        for url in urls:
-            try:
-                await parser.process_url(url, ingestion_mode='manual')
-                success_count += 1
-                print(f"Ingested: {url}")
-            except Exception as e:
-                fail_count += 1
-                print(f"Failed: {url} - {e}")
-            
-            # RATE LIMITING: 6 seconds per item guarantees we stay under Gemini's 15 RPM free tier limit
-            # and prevents PostgreSQL connection spikes or Telegram spam limits.
-            await asyncio.sleep(6)
-            
-    await bot.send_message(chat_id=chat_id, text=f"✅ Batch ingestion completed!\nSuccess: {success_count}\nFailed: {fail_count}")
-
-async def process_playlist_background(playlist_url: str, chat_id: int, bot):
-    try:
-        import yt_dlp
-        from src.ingestion.parser import UniversalLinkParser
-        from src.db.session import SessionLocal
-        
-        def extract_playlist():
-            ydl_opts = {'extract_flat': True, 'quiet': True, 'skip_download': True}
-            with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-                return ydl.extract_info(playlist_url, download=False)
-                
-        video_urls = []
-        try:
-            info = await asyncio.to_thread(extract_playlist)
-            if 'entries' in info:
-                for entry in info['entries']:
-                    if entry and entry.get('url'):
-                        v_url = entry.get('url')
-                        if not v_url.startswith('http'):
-                            v_url = f"https://www.youtube.com/watch?v={v_url}"
-                        video_urls.append(v_url)
-        except Exception as e:
-            print(f"Failed to extract playlist: {e}")
-            await bot.send_message(chat_id=chat_id, text=f"❌ Failed to extract playlist {playlist_url}: {str(e)}")
-            return
-            
-        print(f"Found {len(video_urls)} videos in playlist. Ingesting...")
-        await bot.send_message(chat_id=chat_id, text=f"Found {len(video_urls)} videos in playlist. Starting sequential ingestion (rate-limited to 6s/video)...")
-        
-        success_count = 0
-        fail_count = 0
-        
-        async with SessionLocal() as db:
-            parser = UniversalLinkParser(db)
-            for v_url in video_urls:
-                try:
-                    await parser.process_url(v_url, ingestion_mode='manual')
-                    success_count += 1
-                    print(f"Ingested playlist video: {v_url}")
-                except Exception as e:
-                    print(f"Error on {v_url}: {e}")
-                    fail_count += 1
-                await asyncio.sleep(6)
-                
-        await bot.send_message(chat_id=chat_id, text=f"✅ Batch ingestion completed!\nSuccess: {success_count}\nFailed: {fail_count}")
-    except Exception as fatal_e:
-        print(f"Fatal error in background task: {fatal_e}")
-        await bot.send_message(chat_id=chat_id, text=f"🚨 CRITICAL SYSTEM CRASH during processing: {str(fatal_e)}")
+            await _ingestion_queue.put({"type": "individual", "urls": individual, "chat_id": message.chat_id})
 
 
 async def handle_reaction(update: Update, context: ContextTypes.DEFAULT_TYPE):
     reaction = update.message_reaction
     if not reaction:
         return
-        
+
     async with SessionLocal() as db:
         latest_item = (await db.execute(select(DailyItem).order_by(DailyItem.created_at.desc()))).scalars().first()
         if latest_item:
@@ -160,17 +221,17 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if chat and not chat.is_finished:
         response_text = chat.send_message(message.text)
         await message.reply_text(response_text)
-        
+
         if chat.is_finished:
             summary = chat.summarize_conversation()
-            
+
             async with SessionLocal() as db:
                 for topic in summary.domain_shifts:
                     matched_domain = (await db.execute(select(InterestVector).filter(InterestVector.domain == topic))).scalars().first()
                     if matched_domain:
                         matched_domain.weight = min(1.0, matched_domain.weight + 0.05)
                 await db.commit()
-            
+
             context.user_data['seek_chat'] = None
             await message.reply_text(f"[Seek Chat Concluded]\nSummary: {summary.summary}")
         return
@@ -191,14 +252,14 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
             except Exception as e:
                 await message.reply_text("Failed to analyze your reply.")
                 return
-            
+
             engagement = 'debated' if analysis.agreement_level in ['disagree', 'strong_disagree'] else 'responded'
             analysis_dict = analysis.model_dump()
-            
+
             update_drift(
-                db=db, 
-                item_id=str(latest_item.id), 
-                engagement_type=engagement, 
+                db=db,
+                item_id=str(latest_item.id),
+                engagement_type=engagement,
                 reply_analysis=analysis_dict
             )
 
@@ -211,14 +272,21 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 top_domains_objs = (await db.execute(select(InterestVector).order_by(InterestVector.weight.desc()).limit(5))).scalars().all()
                 top_domains = [td.domain for td in top_domains_objs]
                 context_item = DailyItemResponse.model_validate(latest_item)
-                
+
                 chat = SeekChat(context_item=context_item, top_domains=top_domains)
                 response_text = chat.send_message(reply_text)
                 context.user_data['seek_chat'] = chat
-                
+
                 await message.reply_text(response_text)
             else:
                 await message.reply_text("Your insights have been logged. The Forge adjusts.")
+
+
+async def post_init(application: Application):
+    """Start the ingestion worker when the bot starts."""
+    global _worker_running
+    if not _worker_running:
+        asyncio.create_task(_ingestion_worker(application.bot))
 
 
 def main():
@@ -230,18 +298,20 @@ def main():
     application = Application.builder().token(token).build()
 
     url_filter = (
-        filters.Entity(MessageEntityType.URL) | 
-        filters.Entity(MessageEntityType.TEXT_LINK) | 
-        filters.CaptionEntity(MessageEntityType.URL) | 
+        filters.Entity(MessageEntityType.URL) |
+        filters.Entity(MessageEntityType.TEXT_LINK) |
+        filters.CaptionEntity(MessageEntityType.URL) |
         filters.CaptionEntity(MessageEntityType.TEXT_LINK)
     )
-    
+
     application.add_handler(MessageHandler(url_filter, handle_url))
     application.add_handler(MessageHandler(filters.TEXT & ~url_filter & ~filters.COMMAND, handle_text))
     application.add_handler(MessageReactionHandler(handle_reaction))
 
+    application.post_init = post_init
+
     print("Starting Telegram Bot (Phase 4 Delivery Tasks)...")
-    
+
     application.run_polling(allowed_updates=Update.ALL_TYPES)
 
 if __name__ == '__main__':
