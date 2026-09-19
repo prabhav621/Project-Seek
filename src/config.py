@@ -3,10 +3,11 @@ from enum import Enum
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 class ModelTier(str, Enum):
-    PRO = "gemini-3.5-flash-lite"           # EMERGENCY FALLBACK (3.1-Pro is paid-only)
-    FLASH = "gemini-3.5-flash-lite"         # EMERGENCY FALLBACK (3.8-Flash is 20 RPD capped)
-    FLASH_LITE = "gemini-3.5-flash-lite"    # 1,000 RPD Free Tier Cap
-    EMBEDDING = "gemini-embedding-2"
+    PRO = "nvidia/deepseek-r1"
+    PRO_FALLBACK = "github/meta-llama-3.1-405b-instruct"
+    FLASH_LITE = "groq/llama3-8b-8192"
+    FLASH = "gemini/gemini-3.5-flash-lite"
+    EMBEDDING = "gemini/gemini-embedding-2"
 
 class TaskType(str, Enum):
     DEEP_KATA = "deep_kata"
@@ -24,6 +25,11 @@ class Settings(BaseSettings):
     telegram_bot_token: str = ""
     telegram_chat_id: str = ""
     krutrim_api_key: str = ""
+    
+    # LiteLLM Provider Keys
+    groq_api_key: str = ""
+    github_token: str = ""
+    nvidia_api_key: str = ""
 
     model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8", extra="ignore")
 
