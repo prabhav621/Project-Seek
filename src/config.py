@@ -3,9 +3,9 @@ from enum import Enum
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 class ModelTier(str, Enum):
-    PRO = "gemini-3.1-pro"
-    FLASH = "gemini-3.8-flash"
-    FLASH_LITE = "gemini-3.5-flash-lite"
+    PRO = "gemini-3.5-flash-lite"           # EMERGENCY FALLBACK (3.1-Pro is paid-only)
+    FLASH = "gemini-3.5-flash-lite"         # EMERGENCY FALLBACK (3.8-Flash is 20 RPD capped)
+    FLASH_LITE = "gemini-3.5-flash-lite"    # 1,000 RPD Free Tier Cap
     EMBEDDING = "gemini-embedding-2"
 
 class TaskType(str, Enum):
