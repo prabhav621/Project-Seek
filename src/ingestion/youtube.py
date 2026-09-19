@@ -26,7 +26,8 @@ def extract_subtitles(url: str) -> str:
         raise ValueError(f"Could not extract video ID from {url}")
         
     try:
-        transcript_list = YouTubeTranscriptApi.list_transcripts(video_id)
+        ytt_api = YouTubeTranscriptApi()
+        transcript_list = ytt_api.list(video_id)
         
         # Try to find english transcript (manual or generated)
         try:
