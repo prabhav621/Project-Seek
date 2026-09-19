@@ -36,8 +36,10 @@ class MediaTranscriber:
             prompt = "Please provide a highly accurate transcription of the audio in this file. Output ONLY the transcript without any extra commentary or formatting."
             
             from src.config import ModelTier
+            # Strip "gemini/" prefix since this uses the direct Google SDK (for File API)
+            raw_model = ModelTier.FLASH.value.replace("gemini/", "")
             response = generate_content_with_retry(self.gemini_client, 
-                model=ModelTier.FLASH.value,
+                model=raw_model,
                 contents=[
                     gemini_file,
                     prompt
