@@ -105,35 +105,81 @@ async def _process_playlist(playlist_url: str, chat_id: int, bot):
     total = len(video_urls)
     print(f"Found {total} videos in playlist. Ingesting...")
     try:
-        await bot.send_message(chat_id=chat_id, text=f"Found {total} videos in playlist. Starting sequential ingestion (rate-limited to 6s/video)...")
+        await bot.send_message(chat_id=chat_id, text=f"Found {total} videos in playlist. Starting ingestion with adaptive rate limiting...")
     except Exception:
         pass
 
     # Step 2: Process each video with a FRESH db session per video
+    # Uses adaptive rate limiting to avoid YouTube IP bans
     from src.ingestion.parser import UniversalLinkParser
+    import random
 
     success_count = 0
     fail_count = 0
+    consecutive_errors = 0
+
+    MICRO_BATCH_SIZE = 10
+    MICRO_BATCH_PAUSE = 120  # 2 minutes between micro-batches
 
     for i, v_url in enumerate(video_urls):
+        is_youtube = "youtube.com" in v_url or "youtu.be" in v_url
+
         try:
             async with SessionLocal() as db:
                 parser = UniversalLinkParser(db)
                 await parser.process_url(v_url, ingestion_mode='manual')
                 success_count += 1
-                print(f"[{i+1}/{total}] Ingested: {v_url}")
+                consecutive_errors = 0
+                print(f"[{i+1}/{total}] ✅ Ingested: {v_url}")
+        except RuntimeError as e:
+            # Circuit breaker tripped — stop processing YouTube entirely
+            if "Circuit breaker" in str(e):
+                fail_count += (total - i)
+                print(f"[{i+1}/{total}] ⛔ {e}")
+                try:
+                    await bot.send_message(
+                        chat_id=chat_id,
+                        text=f"⛔ YouTube IP ban detected. Circuit breaker activated.\n"
+                             f"Processed: {i}/{total} ({success_count} success, {fail_count} failed)\n"
+                             f"The bot will auto-resume YouTube requests in 30 minutes.\n"
+                             f"Non-YouTube URLs will continue processing normally."
+                    )
+                except Exception:
+                    pass
+                break
         except Exception as e:
             fail_count += 1
-            print(f"[{i+1}/{total}] Error on {v_url}: {e}")
+            consecutive_errors += 1
+            print(f"[{i+1}/{total}] ❌ Error on {v_url}: {e}")
 
-        await asyncio.sleep(6)
+        # ─── Adaptive Rate Limiting ───────────────
+        if is_youtube:
+            if consecutive_errors >= 2:
+                # Back off harder after consecutive errors
+                delay = 30 + random.uniform(0, 10)
+                print(f"    ⚠️ Backing off: {delay:.0f}s (consecutive errors: {consecutive_errors})")
+            else:
+                # Normal YouTube delay: 15s base + 0-5s jitter
+                delay = 15 + random.uniform(0, 5)
+        else:
+            # Non-YouTube URLs don't need YouTube-specific throttling
+            delay = 6
 
-        # Progress update every 20 videos
-        if (i + 1) % 20 == 0:
+        await asyncio.sleep(delay)
+
+        # ─── Micro-batch pause ────────────────────
+        if is_youtube and (i + 1) % MICRO_BATCH_SIZE == 0 and (i + 1) < total:
             try:
-                await bot.send_message(chat_id=chat_id, text=f"📊 Progress: {i+1}/{total} processed ({success_count} success, {fail_count} failed)")
+                await bot.send_message(
+                    chat_id=chat_id,
+                    text=f"📊 Batch {(i+1)//MICRO_BATCH_SIZE}: {i+1}/{total} processed "
+                         f"({success_count} ✅, {fail_count} ❌)\n"
+                         f"Pausing {MICRO_BATCH_PAUSE//60}min to cool down YouTube rate limits..."
+                )
             except Exception:
                 pass
+            print(f"    ⏸️  Micro-batch pause: {MICRO_BATCH_PAUSE}s")
+            await asyncio.sleep(MICRO_BATCH_PAUSE)
 
     try:
         await bot.send_message(chat_id=chat_id, text=f"✅ Playlist ingestion completed!\nSuccess: {success_count}\nFailed: {fail_count}\nTotal: {total}")
