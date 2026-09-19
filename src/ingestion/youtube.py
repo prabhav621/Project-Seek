@@ -231,12 +231,16 @@ def extract_subtitles(url: str) -> str:
     if not video_id:
         raise ValueError(f"Could not extract video ID from {url}")
 
+    e1 = None
+    e2 = None
+
     # Attempt 1: youtube-transcript-api (fast, lightweight)
     try:
         text = _extract_via_transcript_api(video_id)
         _record_success()
         return text
-    except Exception as e1:
+    except Exception as exc1:
+        e1 = exc1
         error_msg = str(e1)
         is_ban = _is_ip_ban_error(error_msg)
 
@@ -258,13 +262,16 @@ def extract_subtitles(url: str) -> str:
         text = _extract_via_ytdlp(video_id)
         _record_success()
         return text
-    except Exception as e2:
+    except Exception as exc2:
+        e2 = exc2
         error_msg2 = str(e2)
         if _is_ip_ban_error(error_msg2):
             _record_ban()
 
         # Both methods failed
+        msg1 = str(e1)[:100] if e1 else "None"
+        msg2 = str(e2)[:100] if e2 else "None"
         raise ValueError(
             f"Failed to fetch transcript for {video_id}. "
-            f"Transcript-API: {str(e1)[:100]} | yt-dlp: {str(e2)[:100]}"
+            f"Transcript-API: {msg1} | yt-dlp: {msg2}"
         )
