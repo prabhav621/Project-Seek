@@ -97,27 +97,31 @@ def _find_cookies() -> str | None:
 
 
 def _create_authenticated_api():
-    """Create a YouTubeTranscriptApi instance with cookie authentication if available."""
+    """Create a YouTubeTranscriptApi instance with cookie authentication and Tor proxy."""
     from youtube_transcript_api import YouTubeTranscriptApi
+    import requests as req_lib
+
+    session = req_lib.Session()
+    # Route through local Tor proxy
+    session.proxies = {
+        "http": "socks5h://127.0.0.1:9050",
+        "https": "socks5h://127.0.0.1:9050"
+    }
 
     cookie_path = _find_cookies()
     if cookie_path:
         try:
-            import requests as req_lib
-            session = req_lib.Session()
-
             # Load Netscape-format cookies from cookies.txt
             from http.cookiejar import MozillaCookieJar
             cookie_jar = MozillaCookieJar(cookie_path)
             cookie_jar.load(ignore_discard=True, ignore_expires=True)
             session.cookies = cookie_jar
-
-            logger.info("Using authenticated YouTube session (cookies loaded)")
+            logger.info("Using authenticated YouTube session (cookies loaded) via Tor")
             return YouTubeTranscriptApi(http_client=session)
         except Exception as e:
-            logger.warning(f"Failed to load cookies ({e}). Falling back to unauthenticated.")
+            logger.warning(f"Failed to load cookies ({e}). Falling back to unauthenticated via Tor.")
 
-    return YouTubeTranscriptApi()
+    return YouTubeTranscriptApi(http_client=session)
 
 
 # ─── Video ID Extraction ─────────────────────
@@ -182,6 +186,7 @@ def _extract_via_ytdlp(video_id: str) -> str:
             'quiet': True,
             'no_warnings': True,
             'outtmpl': output_template,
+            'proxy': 'socks5://127.0.0.1:9050',
         }
 
         if cookie_path:
