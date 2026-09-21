@@ -106,13 +106,19 @@ async def embed_content_async_with_retry(client, **kwargs):
     if "contents" in kwargs and not content:
         content = kwargs["contents"]
 
+    # Extract output_dimensionality from config dict if present
+    config = kwargs.get("config", {})
+    dimensions = None
+    if isinstance(config, dict):
+        dimensions = config.get("output_dimensionality")
+
     limiter = get_limiter_for_model_string(model)
     await limiter.acquire()
 
     if isinstance(content, str):
         content = [content]
 
-    vecs = await generate_embedding(model=model, inputs=content)
+    vecs = await generate_embedding(model=model, inputs=content, dimensions=dimensions)
     return DummyEmbeddingResponse(vecs)
 
 

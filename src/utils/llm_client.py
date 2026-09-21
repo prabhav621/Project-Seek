@@ -57,13 +57,15 @@ async def generate_completion(model: str, contents: str, fallback: bool = True) 
         raise e
 
 
-async def generate_embedding(model: str, inputs: list[str]) -> list[list[float]]:
+async def generate_embedding(model: str, inputs: list[str], dimensions: int = None) -> list[list[float]]:
     kwargs = {
         "model": model,
         "input": inputs
     }
     if "gemini" in model:
         kwargs["api_key"] = settings.gemini_api_key
+    if dimensions:
+        kwargs["dimensions"] = dimensions
         
     response = await litellm.aembedding(**kwargs)
     return [d["embedding"] for d in response.data]
