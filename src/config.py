@@ -1,6 +1,9 @@
 import os
 from enum import Enum
+from pathlib import Path
 from pydantic_settings import BaseSettings, SettingsConfigDict
+
+_ENV_FILE = str(Path(__file__).resolve().parent.parent / ".env")
 
 class ModelTier(str, Enum):
     PRO = "nvidia/deepseek-r1"
@@ -31,7 +34,7 @@ class Settings(BaseSettings):
     github_token: str = ""
     nvidia_api_key: str = ""
 
-    model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8", extra="ignore")
+    model_config = SettingsConfigDict(env_file=_ENV_FILE, env_file_encoding="utf-8", extra="ignore")
 
     def get_model_for_task(self, task: TaskType) -> ModelTier:
         """

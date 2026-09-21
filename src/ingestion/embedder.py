@@ -13,8 +13,7 @@ class Embedder(Protocol):
 
 class GeminiEmbedder:
     def __init__(self):
-        self.client = genai.Client(api_key=settings.gemini_api_key)
-        self.model_id = "gemini-embedding-2"
+        self.model_id = "gemini/gemini-embedding-2"
 
     async def embed_text(self, text: str) -> List[float]:
         from src.utils.retry import embed_content_async_with_retry

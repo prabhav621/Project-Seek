@@ -26,16 +26,24 @@ _COOLDOWN_SECONDS = 1800  # 30 minutes
 
 def _is_ip_ban_error(error_msg: str) -> bool:
     """Detect if an error is caused by YouTube IP blocking."""
-    ban_keywords = [
-        "ip",
-        "blocked",
-        "requestblocked",
+    import re
+    error_lower = error_msg.lower()
+    
+    # Check for exact exception class names from youtube-transcript-api
+    exact_matches = [
         "ipblocked",
+        "requestblocked",
         "too many requests",
         "429",
     ]
-    error_lower = error_msg.lower()
-    return any(kw in error_lower for kw in ban_keywords)
+    if any(kw in error_lower for kw in exact_matches):
+        return True
+    
+    # Use word-boundary matching for "ip" to avoid matching "transcript"
+    if re.search(r'\bip\b', error_lower) and "block" in error_lower:
+        return True
+    
+    return False
 
 
 def _check_circuit_breaker():
@@ -97,31 +105,27 @@ def _find_cookies() -> str | None:
 
 
 def _create_authenticated_api():
-    """Create a YouTubeTranscriptApi instance with cookie authentication and Tor proxy."""
+    """Create a YouTubeTranscriptApi instance with cookie authentication."""
     from youtube_transcript_api import YouTubeTranscriptApi
-    import requests as req_lib
-
-    session = req_lib.Session()
-    # Route through local Tor proxy
-    session.proxies = {
-        "http": "socks5h://127.0.0.1:9050",
-        "https": "socks5h://127.0.0.1:9050"
-    }
 
     cookie_path = _find_cookies()
     if cookie_path:
         try:
+            import requests as req_lib
+            session = req_lib.Session()
+
             # Load Netscape-format cookies from cookies.txt
             from http.cookiejar import MozillaCookieJar
             cookie_jar = MozillaCookieJar(cookie_path)
             cookie_jar.load(ignore_discard=True, ignore_expires=True)
             session.cookies = cookie_jar
-            logger.info("Using authenticated YouTube session (cookies loaded) via Tor")
+
+            logger.info("Using authenticated YouTube session (cookies loaded)")
             return YouTubeTranscriptApi(http_client=session)
         except Exception as e:
-            logger.warning(f"Failed to load cookies ({e}). Falling back to unauthenticated via Tor.")
+            logger.warning(f"Failed to load cookies ({e}). Falling back to unauthenticated.")
 
-    return YouTubeTranscriptApi(http_client=session)
+    return YouTubeTranscriptApi()
 
 
 # ─── Video ID Extraction ─────────────────────
@@ -138,6 +142,8 @@ def _extract_video_id(url: str) -> str:
         if parsed_url.path.startswith('/embed/'):
             return parsed_url.path.split('/')[2]
         if parsed_url.path.startswith('/v/'):
+            return parsed_url.path.split('/')[2]
+        if parsed_url.path.startswith('/shorts/'):
             return parsed_url.path.split('/')[2]
     return None
 
@@ -186,7 +192,6 @@ def _extract_via_ytdlp(video_id: str) -> str:
             'quiet': True,
             'no_warnings': True,
             'outtmpl': output_template,
-            'proxy': 'socks5://127.0.0.1:9050',
         }
 
         if cookie_path:
