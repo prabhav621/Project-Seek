@@ -15,10 +15,7 @@ if settings.nvidia_api_key:
 
 
 def _route_model(model: str, contents: str) -> str:
-    """Apply context-overflow routing: if Groq model but text is too large, reroute to Gemini."""
-    estimated_tokens = len(contents) / 4
-    if "groq" in model and estimated_tokens > 7500:
-        return ModelTier.FLASH.value
+    """Pass-through router. (Context overflow routing removed as Gemini handles 1M+ tokens)."""
     return model
 
 
