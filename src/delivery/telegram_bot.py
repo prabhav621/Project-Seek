@@ -154,13 +154,13 @@ async def _process_playlist(playlist_url: str, chat_id: int, bot):
 
         # ─── Adaptive Rate Limiting ───────────────
         if is_youtube:
-            if consecutive_errors >= 2:
-                # Back off harder after consecutive errors
-                delay = 30 + random.uniform(0, 10)
+            if consecutive_errors >= 1:  # Drop tolerance: back off immediately on 1st error
+                # Extreme backoff: 60 to 80 seconds
+                delay = 60 + random.uniform(0, 20)
                 print(f"    ⚠️ Backing off: {delay:.0f}s (consecutive errors: {consecutive_errors})")
             else:
-                # Normal YouTube delay: 15s base + 0-5s jitter
-                delay = 15 + random.uniform(0, 5)
+                # Ultra-safe YouTube delay: 30 to 40 seconds
+                delay = 30 + random.uniform(0, 10)
         else:
             # Non-YouTube URLs don't need YouTube-specific throttling
             delay = 6
