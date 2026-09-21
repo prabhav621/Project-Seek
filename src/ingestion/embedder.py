@@ -1,6 +1,4 @@
 from typing import List, Protocol
-from google import genai
-from src.config import settings
 
 class Embedder(Protocol):
     async def embed_text(self, text: str) -> List[float]:
@@ -18,7 +16,7 @@ class GeminiEmbedder:
     async def embed_text(self, text: str) -> List[float]:
         from src.utils.retry import embed_content_async_with_retry
         response = await embed_content_async_with_retry(
-            self.client,
+            None,
             model=self.model_id,
             contents=text,
             config={"output_dimensionality": 768}
@@ -28,7 +26,7 @@ class GeminiEmbedder:
     async def embed_batch(self, texts: List[str]) -> List[List[float]]:
         from src.utils.retry import embed_content_async_with_retry
         response = await embed_content_async_with_retry(
-            self.client,
+            None,
             model=self.model_id,
             contents=texts,
             config={"output_dimensionality": 768}
