@@ -58,10 +58,14 @@ async def generate_completion(model: str, contents: str, fallback: bool = True) 
 
 
 async def generate_embedding(model: str, inputs: list[str]) -> list[list[float]]:
-    response = await litellm.aembedding(
-        model=model,
-        input=inputs
-    )
+    kwargs = {
+        "model": model,
+        "input": inputs
+    }
+    if "gemini" in model:
+        kwargs["api_key"] = settings.gemini_api_key
+        
+    response = await litellm.aembedding(**kwargs)
     return [d["embedding"] for d in response.data]
 
 
@@ -134,6 +138,16 @@ def generate_chat_sync(
         "messages": full_messages,
         "temperature": temperature,
     }
+    
+    if "gemini" in model:
+        kwargs["api_key"] = settings.gemini_api_key
+    elif "groq" in model:
+        kwargs["api_key"] = settings.groq_api_key
+    elif "nvidia" in model:
+        kwargs["api_key"] = settings.nvidia_api_key
+    elif "github" in model:
+        kwargs["api_key"] = settings.github_token
+
     if json_mode:
         kwargs["response_format"] = {"type": "json_object"}
 
