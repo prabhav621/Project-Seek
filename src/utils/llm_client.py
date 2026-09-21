@@ -29,12 +29,22 @@ def _route_model(model: str, contents: str) -> str:
 async def generate_completion(model: str, contents: str, fallback: bool = True) -> str:
     target_model = _route_model(model, contents)
     messages = [{"role": "user", "content": contents}]
+    
+    kwargs = {
+        "model": target_model,
+        "messages": messages
+    }
+    if "gemini" in target_model:
+        kwargs["api_key"] = settings.gemini_api_key
+    elif "groq" in target_model:
+        kwargs["api_key"] = settings.groq_api_key
+    elif "nvidia" in target_model:
+        kwargs["api_key"] = settings.nvidia_api_key
+    elif "github" in target_model:
+        kwargs["api_key"] = settings.github_token
 
     try:
-        response = await litellm.acompletion(
-            model=target_model,
-            messages=messages
-        )
+        response = await litellm.acompletion(**kwargs)
         return response.choices[0].message.content
     except Exception as e:
         if fallback and "nvidia/deepseek" in model:
@@ -81,6 +91,16 @@ def generate_completion_sync(
         "messages": messages,
         "temperature": temperature,
     }
+    
+    if "gemini" in target_model:
+        kwargs["api_key"] = settings.gemini_api_key
+    elif "groq" in target_model:
+        kwargs["api_key"] = settings.groq_api_key
+    elif "nvidia" in target_model:
+        kwargs["api_key"] = settings.nvidia_api_key
+    elif "github" in target_model:
+        kwargs["api_key"] = settings.github_token
+
     if json_mode:
         kwargs["response_format"] = {"type": "json_object"}
 
