@@ -114,6 +114,7 @@ async def _process_playlist(playlist_url: str, chat_id: int, bot):
     from src.ingestion.parser import UniversalLinkParser
     import random
 
+    failed_urls = []
     success_count = 0
     fail_count = 0
     consecutive_errors = 0
@@ -135,6 +136,7 @@ async def _process_playlist(playlist_url: str, chat_id: int, bot):
             # Circuit breaker tripped — stop processing YouTube entirely
             if "Circuit breaker" in str(e):
                 fail_count += (total - i)
+                failed_urls.extend(video_urls[i:])
                 print(f"[{i+1}/{total}] ⛔ {e}")
                 try:
                     await bot.send_message(
@@ -150,6 +152,7 @@ async def _process_playlist(playlist_url: str, chat_id: int, bot):
         except Exception as e:
             fail_count += 1
             consecutive_errors += 1
+            failed_urls.append(v_url)
             print(f"[{i+1}/{total}] ❌ Error on {v_url}: {e}")
 
         # ─── Adaptive Rate Limiting ───────────────
@@ -181,8 +184,20 @@ async def _process_playlist(playlist_url: str, chat_id: int, bot):
             print(f"    ⏸️  Micro-batch pause: {MICRO_BATCH_PAUSE}s")
             await asyncio.sleep(MICRO_BATCH_PAUSE)
 
+    # ─── Log Failures ──────────────────────────
+    if failed_urls:
+        try:
+            with open("failed_ingestions.txt", "a") as f:
+                for u in failed_urls:
+                    f.write(f"{u}\n")
+        except Exception as e:
+            print(f"Could not write to failed_ingestions.txt: {e}")
+
     try:
-        await bot.send_message(chat_id=chat_id, text=f"✅ Playlist ingestion completed!\nSuccess: {success_count}\nFailed: {fail_count}\nTotal: {total}")
+        final_msg = f"✅ Playlist ingestion completed!\nSuccess: {success_count}\nFailed: {fail_count}\nTotal: {total}"
+        if failed_urls:
+            final_msg += f"\n\n⚠️ {len(failed_urls)} URLs failed. They have been logged to 'failed_ingestions.txt' on the server."
+        await bot.send_message(chat_id=chat_id, text=final_msg)
     except Exception:
         print(f"Playlist done: {success_count} success, {fail_count} failed (couldn't notify Telegram)")
 
