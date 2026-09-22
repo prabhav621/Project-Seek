@@ -32,9 +32,14 @@ def _extract_via_transcript_api(video_id: str) -> str:
     from youtube_transcript_api import YouTubeTranscriptApi
     
     proxy_url = getattr(settings, 'residential_proxy_url', '')
-    proxies = {'http': proxy_url, 'https': proxy_url} if proxy_url else None
-    
-    ytt_api = YouTubeTranscriptApi(proxies=proxies) if proxies else YouTubeTranscriptApi()
+    if proxy_url:
+        import requests
+        session = requests.Session()
+        session.proxies = {'http': proxy_url, 'https': proxy_url}
+        ytt_api = YouTubeTranscriptApi(http_client=session)
+    else:
+        ytt_api = YouTubeTranscriptApi()
+        
     transcript_list = ytt_api.list(video_id)
 
     try:
