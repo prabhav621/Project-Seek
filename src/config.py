@@ -28,6 +28,7 @@ class Settings(BaseSettings):
     telegram_bot_token: str = ""
     telegram_chat_id: str = ""
     krutrim_api_key: str = ""
+    residential_proxy_url: str = ""
     
     # LiteLLM Provider Keys
     groq_api_key: str = ""

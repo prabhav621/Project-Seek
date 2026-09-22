@@ -130,59 +130,21 @@ async def _process_playlist(playlist_url: str, chat_id: int, bot):
                 parser = UniversalLinkParser(db)
                 await parser.process_url(v_url, ingestion_mode='manual')
                 success_count += 1
-                consecutive_errors = 0
                 print(f"[{i+1}/{total}] ✅ Ingested: {v_url}")
-        except RuntimeError as e:
-            # Circuit breaker tripped — stop processing YouTube entirely
-            if "Circuit breaker" in str(e):
-                fail_count += (total - i)
-                failed_urls.extend(video_urls[i:])
-                print(f"[{i+1}/{total}] ⛔ {e}")
-                try:
-                    await bot.send_message(
-                        chat_id=chat_id,
-                        text=f"⛔ YouTube IP ban detected. Circuit breaker activated.\n"
-                             f"Processed: {i}/{total} ({success_count} success, {fail_count} failed)\n"
-                             f"The bot will auto-resume YouTube requests in 30 minutes.\n"
-                             f"Non-YouTube URLs will continue processing normally."
-                    )
-                except Exception:
-                    pass
-                break
         except Exception as e:
             fail_count += 1
-            consecutive_errors += 1
             failed_urls.append(v_url)
             print(f"[{i+1}/{total}] ❌ Error on {v_url}: {e}")
 
-        # ─── Adaptive Rate Limiting ───────────────
+        # ─── Pacing (Gemini RPM Calibration) ──────
         if is_youtube:
-            if consecutive_errors >= 1:  # Drop tolerance: back off immediately on 1st error
-                # Extreme backoff: 60 to 80 seconds
-                delay = 60 + random.uniform(0, 20)
-                print(f"    ⚠️ Backing off: {delay:.0f}s (consecutive errors: {consecutive_errors})")
-            else:
-                # Ultra-safe YouTube delay: 30 to 40 seconds
-                delay = 30 + random.uniform(0, 10)
+            # 15 RPM free tier limit = 4.0s minimum. 
+            # 4.5s guarantees we stay safely under the Gemini API rate limit.
+            delay = 4.5
         else:
-            # Non-YouTube URLs don't need YouTube-specific throttling
             delay = 6
 
         await asyncio.sleep(delay)
-
-        # ─── Micro-batch pause ────────────────────
-        if is_youtube and (i + 1) % MICRO_BATCH_SIZE == 0 and (i + 1) < total:
-            try:
-                await bot.send_message(
-                    chat_id=chat_id,
-                    text=f"📊 Batch {(i+1)//MICRO_BATCH_SIZE}: {i+1}/{total} processed "
-                         f"({success_count} ✅, {fail_count} ❌)\n"
-                         f"Pausing {MICRO_BATCH_PAUSE//60}min to cool down YouTube rate limits..."
-                )
-            except Exception:
-                pass
-            print(f"    ⏸️  Micro-batch pause: {MICRO_BATCH_PAUSE}s")
-            await asyncio.sleep(MICRO_BATCH_PAUSE)
 
     # ─── Log Failures ──────────────────────────
     if failed_urls:

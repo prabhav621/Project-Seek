@@ -33,100 +33,6 @@ def _is_ip_ban_error(error_msg: str) -> bool:
     exact_matches = [
         "ipblocked",
         "requestblocked",
-        "too many requests",
-        "429",
-    ]
-    if any(kw in error_lower for kw in exact_matches):
-        return True
-    
-    # Use word-boundary matching for "ip" to avoid matching "transcript"
-    if re.search(r'\bip\b', error_lower) and "block" in error_lower:
-        return True
-    
-    return False
-
-
-def _check_circuit_breaker():
-    """Raises immediately if the circuit breaker is tripped (IP is banned)."""
-    global _circuit_open_until
-    if time.time() < _circuit_open_until:
-        remaining = int(_circuit_open_until - time.time())
-        raise RuntimeError(
-            f"⛔ Circuit breaker OPEN — YouTube IP is temporarily banned. "
-            f"Auto-retrying in {remaining // 60}m {remaining % 60}s. "
-            f"No YouTube requests will be made until then."
-        )
-
-
-def _record_success():
-    """Reset the consecutive ban counter on a successful request."""
-    global _consecutive_bans
-    _consecutive_bans = 0
-
-
-def _record_ban():
-    """Record an IP ban error. Trips the circuit breaker after threshold."""
-    global _consecutive_bans, _circuit_open_until
-    _consecutive_bans += 1
-    if _consecutive_bans >= _BAN_THRESHOLD:
-        _circuit_open_until = time.time() + _COOLDOWN_SECONDS
-        logger.warning(
-            f"🚨 Circuit breaker TRIPPED after {_consecutive_bans} consecutive IP bans. "
-            f"All YouTube requests blocked for {_COOLDOWN_SECONDS // 60} minutes."
-        )
-
-
-# ─── Cookie Management ───────────────────────
-
-_COOKIE_PATH = None
-
-
-def _find_cookies() -> str | None:
-    """Locate the cookies.txt file in the project directory."""
-    global _COOKIE_PATH
-    if _COOKIE_PATH and os.path.exists(_COOKIE_PATH):
-        return _COOKIE_PATH
-
-    # Search common locations relative to project root
-    project_root = Path(__file__).resolve().parent.parent.parent
-    candidates = [
-        project_root / "cookies.txt",
-        project_root / "yt_cookies.txt",
-        Path.home() / "cookies.txt",
-    ]
-    for path in candidates:
-        if path.exists():
-            _COOKIE_PATH = str(path)
-            logger.info(f"Found YouTube cookies at: {_COOKIE_PATH}")
-            return _COOKIE_PATH
-
-    logger.warning("No cookies.txt found. YouTube requests will be unauthenticated (higher ban risk).")
-    return None
-
-
-def _create_authenticated_api():
-    """Create a YouTubeTranscriptApi instance with cookie authentication."""
-    from youtube_transcript_api import YouTubeTranscriptApi
-
-    cookie_path = _find_cookies()
-    if cookie_path:
-        try:
-            import requests as req_lib
-            session = req_lib.Session()
-
-            # Load Netscape-format cookies from cookies.txt
-            from http.cookiejar import MozillaCookieJar
-            cookie_jar = MozillaCookieJar(cookie_path)
-            cookie_jar.load(ignore_discard=True, ignore_expires=True)
-            session.cookies = cookie_jar
-
-            logger.info("Using authenticated YouTube session (cookies loaded)")
-            return YouTubeTranscriptApi(http_client=session)
-        except Exception as e:
-            logger.warning(f"Failed to load cookies ({e}). Falling back to unauthenticated.")
-
-    return YouTubeTranscriptApi()
-
 
 # ─── Video ID Extraction ─────────────────────
 
@@ -151,8 +57,13 @@ def _extract_video_id(url: str) -> str:
 # ─── Primary: youtube-transcript-api ──────────
 
 def _extract_via_transcript_api(video_id: str) -> str:
-    """Primary method: use youtube-transcript-api with cookie auth."""
-    ytt_api = _create_authenticated_api()
+    """Primary method: use youtube-transcript-api routed via proxy."""
+    from youtube_transcript_api import YouTubeTranscriptApi
+    
+    proxy_url = getattr(settings, "residential_proxy_url", "")
+    proxies = {"http": proxy_url, "https": proxy_url} if proxy_url else None
+    
+    ytt_api = YouTubeTranscriptApi(proxies=proxies) if proxies else YouTubeTranscriptApi()
     transcript_list = ytt_api.list(video_id)
 
     # Try English first
@@ -174,14 +85,13 @@ def _extract_via_transcript_api(video_id: str) -> str:
 # ─── Fallback: yt-dlp subtitle extraction ────
 
 def _extract_via_ytdlp(video_id: str) -> str:
-    """Fallback method: use yt-dlp to download subtitles as files."""
+    """Fallback method: use yt-dlp via proxy."""
     import yt_dlp
 
     url = f"https://www.youtube.com/watch?v={video_id}"
 
     with tempfile.TemporaryDirectory() as tmpdir:
         output_template = os.path.join(tmpdir, '%(id)s')
-        cookie_path = _find_cookies()
 
         ydl_opts = {
             'writesubtitles': True,
@@ -194,8 +104,9 @@ def _extract_via_ytdlp(video_id: str) -> str:
             'outtmpl': output_template,
         }
 
-        if cookie_path:
-            ydl_opts['cookiefile'] = cookie_path
+        proxy_url = getattr(settings, "residential_proxy_url", "")
+        if proxy_url:
+            ydl_opts['proxy'] = proxy_url
 
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
             ydl.download([url])
@@ -230,13 +141,8 @@ def _extract_via_ytdlp(video_id: str) -> str:
 
 def extract_subtitles(url: str) -> str:
     """
-    Extracts subtitles from a YouTube video with multi-layer protection:
-    1. Check circuit breaker (fail fast if IP is banned)
-    2. Try youtube-transcript-api with cookie auth
-    3. Fall back to yt-dlp subtitle extraction
+    Extracts subtitles from a YouTube video with immediate proxy retry logic.
     """
-    _check_circuit_breaker()
-
     video_id = _extract_video_id(url)
     if not video_id:
         raise ValueError(f"Could not extract video ID from {url}")
@@ -244,44 +150,27 @@ def extract_subtitles(url: str) -> str:
     e1 = None
     e2 = None
 
-    # Attempt 1: youtube-transcript-api (fast, lightweight)
-    try:
-        text = _extract_via_transcript_api(video_id)
-        _record_success()
-        return text
-    except Exception as exc1:
-        e1 = exc1
-        error_msg = str(e1)
-        is_ban = _is_ip_ban_error(error_msg)
+    # Attempt 1: youtube-transcript-api (fast, lightweight, with 3 instant retries)
+    for attempt in range(3):
+        try:
+            return _extract_via_transcript_api(video_id)
+        except Exception as exc1:
+            e1 = exc1
+            logger.warning(f"Transcript-api failed for {video_id} (Attempt {attempt+1}/3): {str(exc1)[:100]}")
+            # Instant retry triggers next IP in the proxy pool
 
-        if is_ban:
-            logger.warning(f"IP ban detected on transcript-api for {video_id}: {error_msg}")
-            _record_ban()
-        else:
-            logger.info(f"Transcript-api failed for {video_id} (not IP ban): {error_msg}")
+    # Attempt 2: yt-dlp (heavier fallback)
+    for attempt in range(2):
+        try:
+            logger.info(f"Falling back to yt-dlp for {video_id} (Attempt {attempt+1}/2)...")
+            return _extract_via_ytdlp(video_id)
+        except Exception as exc2:
+            e2 = exc2
+            logger.warning(f"yt-dlp failed for {video_id} (Attempt {attempt+1}/2): {str(exc2)[:100]}")
 
-    # Check if circuit breaker just tripped from the ban above
-    try:
-        _check_circuit_breaker()
-    except RuntimeError:
-        raise
-
-    # Attempt 2: yt-dlp (heavier, but different request fingerprint)
-    try:
-        logger.info(f"Falling back to yt-dlp for {video_id}...")
-        text = _extract_via_ytdlp(video_id)
-        _record_success()
-        return text
-    except Exception as exc2:
-        e2 = exc2
-        error_msg2 = str(e2)
-        if _is_ip_ban_error(error_msg2):
-            _record_ban()
-
-        # Both methods failed
-        msg1 = str(e1)[:100] if e1 else "None"
-        msg2 = str(e2)[:100] if e2 else "None"
-        raise ValueError(
-            f"Failed to fetch transcript for {video_id}. "
-            f"Transcript-API: {msg1} | yt-dlp: {msg2}"
-        )
+    msg1 = str(e1)[:100] if e1 else "None"
+    msg2 = str(e2)[:100] if e2 else "None"
+    raise ValueError(
+        f"Failed to fetch transcript for {video_id}. "
+        f"Transcript-API: {msg1} | yt-dlp: {msg2}"
+    )
