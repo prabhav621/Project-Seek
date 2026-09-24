@@ -24,7 +24,7 @@ class MediaTranscriber:
     def _transcribe_with_gemini(self, file_path: str) -> str:
         gemini_file = self.gemini_client.files.upload(file=file_path)
         try:
-            prompt = "Please provide a highly accurate transcription of the audio in this file. Output ONLY the transcript without any extra commentary or formatting."
+            prompt = "Please provide a highly accurate transcription of the audio in this file. Output ONLY the transcript without any extra commentary or formatting. IMPORTANT: If the audio is spoken in a non-English language (such as Hindi), you MUST translate the transcript directly into English."
             from src.config import ModelTier
             raw_model = ModelTier.FLASH.value.replace("gemini/", "")
             response = generate_content_with_retry(self.gemini_client, 
@@ -61,7 +61,7 @@ class MediaTranscriber:
             if not gemini_files:
                 return None
 
-            prompt = "Extract all visible text from these images sequentially. If an image contains no text but conveys meaning (like an infographic, chart, or scene), briefly describe what it shows. Label each slide (e.g., 'Slide 1:', 'Slide 2:'). Output ONLY the combined text and descriptions."
+            prompt = "Extract all visible text from these images sequentially. If an image contains no text but conveys meaning (like an infographic, chart, or scene), briefly describe what it shows. Label each slide (e.g., 'Slide 1:', 'Slide 2:'). Output ONLY the combined text and descriptions. IMPORTANT: If the text is in a non-English language (such as Hindi), translate it directly into English."
             
             from src.config import ModelTier
             raw_model = ModelTier.FLASH.value.replace("gemini/", "")
