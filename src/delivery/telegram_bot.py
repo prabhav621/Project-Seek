@@ -138,9 +138,11 @@ async def _process_playlist(playlist_url: str, chat_id: int, bot):
 
         # ─── Pacing (Gemini RPM Calibration) ──────
         if is_youtube:
-            # 15 RPM free tier limit = 4.0s minimum. 
-            # 4.5s guarantees we stay safely under the Gemini API rate limit.
-            delay = 4.5
+            # Gemini Free Tier limit is 15 RPM. 
+            # We make TWO calls per video (Embedder + Domain Tagger).
+            # 15 RPM / 2 calls = 7.5 videos per min. 60s / 7.5 = 8.0s min delay.
+            # 9.0s guarantees we stay safely under the limit.
+            delay = 9.0
         else:
             delay = 6
 
