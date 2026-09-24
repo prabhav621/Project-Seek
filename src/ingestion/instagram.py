@@ -1,50 +1,63 @@
 ﻿import os
 import tempfile
-import yt_dlp
+import urllib.request
+from apify_client import ApifyClient
 from src.ingestion.media import transcribe_media
 
 def extract_instagram_content(url: str) -> str:
     """
-    Downloads Instagram Reel/Post audio using yt-dlp and transcribes it using Gemini.
-    Also attempts to grab the caption from yt-dlp metadata.
+    Extracts Instagram Reel/Post data using the Apify enterprise scraper.
+    Bypasses all local IP blocking and walled gardens.
     """
-    with tempfile.TemporaryDirectory() as tmpdir:
-        outtmpl = os.path.join(tmpdir, '%(id)s.%(ext)s')
-        ydl_opts = {
-            'format': 'bestaudio/best',
-            'outtmpl': outtmpl,
-            'quiet': True,
-        }
+    token = os.getenv("APIFY_API_TOKEN")
+    if not token:
+        return "ERROR: APIFY_API_TOKEN is missing from .env file."
         
-        # Inject Instagram cookies to bypass the walled garden
-        cookie_path = 'ig_cookies.txt'
-        if os.path.exists(cookie_path):
-            ydl_opts['cookiefile'] = cookie_path
+    print(f"Triggering Apify Extraction for: {url}")
+    print("Waiting for Apify cloud servers (usually takes 10-20 seconds)...")
+    
+    client = ApifyClient(token)
+    
+    run_input = {
+        "directUrls": [url],
+        "resultsType": "details",
+        "resultsLimit": 1
+    }
+    
+    try:
+        # Run the actor on Apify's servers
+        run = client.actor("apify/instagram-scraper").call(run_input=run_input)
         
+        video_url = None
         caption = ""
-        audio_path = None
         
-        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-            try:
-                info = ydl.extract_info(url, download=True)
-                caption = info.get('description', '')
-                
-                # Find the downloaded file
-                for f in os.listdir(tmpdir):
-                    audio_path = os.path.join(tmpdir, f)
-                    break
-            except Exception as e:
-                return f"Error extracting instagram data: {str(e)}"
-                
+        # Iterate over the dataset
+        for item in client.dataset(run["defaultDatasetId"]).iterate_items():
+            video_url = item.get('videoUrl')
+            caption = item.get('caption', '')
+            break # We only expect 1 item
+            
+        if not video_url:
+            return f"ERROR: Apify could not extract a video URL for {url}. It may not be a valid video/reel."
+            
+        # Download the video locally to a temp file so we can transcribe it
+        with tempfile.NamedTemporaryFile(delete=False, suffix='.mp4') as tmpfile:
+            print("Video URL retrieved. Downloading for transcription...")
+            urllib.request.urlretrieve(video_url, tmpfile.name)
+            audio_path = tmpfile.name
+            
+        # Transcribe
         transcript = ""
-        if audio_path and os.path.exists(audio_path):
-            print(f"Transcribing Instagram audio: {audio_path}")
+        if os.path.exists(audio_path):
+            print("Transcribing Instagram audio with Gemini...")
             try:
                 transcript = transcribe_media(audio_path)
             except Exception as e:
                 print(f"Transcription failed: {e}")
+            finally:
+                os.remove(audio_path) # Clean up temp file
                 
-        # Combine caption and transcript
+        # Combine
         combined = []
         if caption:
             combined.append(f"Caption:\n{caption}")
@@ -52,3 +65,6 @@ def extract_instagram_content(url: str) -> str:
             combined.append(f"Transcript:\n{transcript}")
             
         return "\n\n".join(combined)
+        
+    except Exception as e:
+        return f"Error extracting instagram data via Apify: {str(e)}"
