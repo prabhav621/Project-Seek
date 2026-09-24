@@ -5,10 +5,6 @@ from apify_client import ApifyClient
 from src.ingestion.media import transcribe_media
 
 def extract_instagram_content(url: str) -> str:
-    """
-    Extracts Instagram Reel/Post data using the Apify enterprise scraper.
-    Bypasses all local IP blocking and walled gardens.
-    """
     token = os.getenv("APIFY_API_TOKEN")
     if not token:
         return "ERROR: APIFY_API_TOKEN is missing from .env file."
@@ -25,28 +21,30 @@ def extract_instagram_content(url: str) -> str:
     }
     
     try:
-        # Run the actor on Apify's servers
         run = client.actor("apify/instagram-scraper").call(run_input=run_input)
         
+        # Handle dict or object return types depending on apify-client version
+        dataset_id = run["defaultDatasetId"] if isinstance(run, dict) else getattr(run, "defaultDatasetId", getattr(run, "default_dataset_id", None))
+        
+        if not dataset_id:
+            return f"ERROR: Could not find defaultDatasetId in the Apify run response."
+            
         video_url = None
         caption = ""
         
-        # Iterate over the dataset
-        for item in client.dataset(run["defaultDatasetId"]).iterate_items():
+        for item in client.dataset(dataset_id).iterate_items():
             video_url = item.get('videoUrl')
             caption = item.get('caption', '')
-            break # We only expect 1 item
+            break 
             
         if not video_url:
-            return f"ERROR: Apify could not extract a video URL for {url}. It may not be a valid video/reel."
+            return f"ERROR: Apify could not extract a video URL for {url}. The post might be private, deleted, or age-restricted."
             
-        # Download the video locally to a temp file so we can transcribe it
         with tempfile.NamedTemporaryFile(delete=False, suffix='.mp4') as tmpfile:
             print("Video URL retrieved. Downloading for transcription...")
             urllib.request.urlretrieve(video_url, tmpfile.name)
             audio_path = tmpfile.name
             
-        # Transcribe
         transcript = ""
         if os.path.exists(audio_path):
             print("Transcribing Instagram audio with Gemini...")
@@ -55,9 +53,8 @@ def extract_instagram_content(url: str) -> str:
             except Exception as e:
                 print(f"Transcription failed: {e}")
             finally:
-                os.remove(audio_path) # Clean up temp file
+                os.remove(audio_path) 
                 
-        # Combine
         combined = []
         if caption:
             combined.append(f"Caption:\n{caption}")
