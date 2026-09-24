@@ -1,4 +1,4 @@
-import os
+﻿import os
 import tempfile
 import yt_dlp
 from src.ingestion.media import transcribe_media
@@ -15,6 +15,11 @@ def extract_instagram_content(url: str) -> str:
             'outtmpl': outtmpl,
             'quiet': True,
         }
+        
+        # Inject Instagram cookies to bypass the walled garden
+        cookie_path = 'ig_cookies.txt'
+        if os.path.exists(cookie_path):
+            ydl_opts['cookiefile'] = cookie_path
         
         caption = ""
         audio_path = None
