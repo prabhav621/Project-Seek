@@ -1,4 +1,4 @@
-﻿import asyncio
+import asyncio
 import os
 from src.db.session import SessionLocal
 from src.ingestion.parser import UniversalLinkParser

@@ -1,4 +1,4 @@
-﻿import urllib.parse
+import urllib.parse
 from enum import Enum
 import asyncio
 from sqlalchemy.ext.asyncio import AsyncSession
