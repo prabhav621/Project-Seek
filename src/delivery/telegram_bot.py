@@ -1,6 +1,6 @@
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 import pytz
-﻿import sys
+import sys
 import asyncio
 import traceback
 from pathlib import Path
