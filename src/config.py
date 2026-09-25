@@ -6,8 +6,8 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 _ENV_FILE = str(Path(__file__).resolve().parent.parent / ".env")
 
 class ModelTier(str, Enum):
-    PRO = "gemini/gemini-3.5-flash"
-    PRO_FALLBACK = "gemini/gemini-3.5-flash"
+    PRO = "nvidia_nim/deepseek-ai/deepseek-r1"
+    PRO_FALLBACK = "github/meta-llama-3.1-405b-instruct"
     FLASH_LITE = "gemini/gemini-3.5-flash-lite"
     FLASH = "gemini/gemini-3.5-flash-lite"
     EMBEDDING = "gemini/gemini-embedding-2"
