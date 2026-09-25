@@ -41,6 +41,7 @@ async def generate_completion(model: str, contents: str, fallback: bool = True) 
         kwargs["api_key"] = settings.github_token
 
     try:
+        kwargs["drop_params"] = True
         response = await litellm.acompletion(**kwargs)
         return response.choices[0].message.content
     except Exception as e:
@@ -108,6 +109,7 @@ def generate_completion_sync(
         kwargs["response_format"] = {"type": "json_object"}
 
     try:
+        kwargs["drop_params"] = True
         response = litellm.completion(**kwargs)
         return response.choices[0].message.content
     except Exception as e:
@@ -115,7 +117,8 @@ def generate_completion_sync(
             print(f"Primary PRO node failed ({e}). Falling back to GitHub Models...")
             kwargs["model"] = ModelTier.PRO_FALLBACK.value
             kwargs["api_key"] = settings.github_token
-            response = litellm.completion(**kwargs)
+            kwargs["drop_params"] = True
+        response = litellm.completion(**kwargs)
             return response.choices[0].message.content
         raise e
 
@@ -152,6 +155,7 @@ def generate_chat_sync(
         kwargs["response_format"] = {"type": "json_object"}
 
     try:
+        kwargs["drop_params"] = True
         response = litellm.completion(**kwargs)
         return response.choices[0].message.content
     except Exception as e:
@@ -159,6 +163,7 @@ def generate_chat_sync(
             print(f"Primary PRO node failed ({e}). Falling back to GitHub Models...")
             kwargs["model"] = ModelTier.PRO_FALLBACK.value
             kwargs["api_key"] = settings.github_token
-            response = litellm.completion(**kwargs)
+            kwargs["drop_params"] = True
+        response = litellm.completion(**kwargs)
             return response.choices[0].message.content
         raise e
