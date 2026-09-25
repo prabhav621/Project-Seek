@@ -7,7 +7,8 @@ _ENV_FILE = str(Path(__file__).resolve().parent.parent / ".env")
 
 class ModelTier(str, Enum):
     PRO = "nvidia_nim/deepseek-ai/deepseek-r1"
-    PRO_FALLBACK = "github/meta-llama-3.1-405b-instruct"
+    PRO_FALLBACK_1 = "github/meta-llama-3.1-405b-instruct"
+    PRO_FALLBACK_2 = "groq/llama-3.3-70b-versatile"
     FLASH_LITE = "gemini/gemini-3.5-flash-lite"
     FLASH = "gemini/gemini-3.5-flash-lite"
     EMBEDDING = "gemini/gemini-embedding-2"
@@ -41,9 +42,9 @@ class Settings(BaseSettings):
         """
         Tiered Model Router logic based on task type.
         """
-        if task in (TaskType.DEEP_KATA, TaskType.SEEK_CHAT):
+        if task in (TaskType.DEEP_KATA, TaskType.SEEK_CHAT, TaskType.APHORISM, TaskType.INVERSION_PROMPT):
             return ModelTier.PRO
-        elif task in (TaskType.QUICK_KATA, TaskType.APHORISM, TaskType.INVERSION_PROMPT):
+        elif task in (TaskType.QUICK_KATA, ):
             return ModelTier.FLASH
         elif task in (TaskType.REPLY_ANALYSIS, TaskType.TAGGING, TaskType.SUGGESTION_HOOKS):
             return ModelTier.FLASH_LITE
