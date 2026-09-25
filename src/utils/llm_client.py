@@ -118,7 +118,7 @@ def generate_completion_sync(
             kwargs["model"] = ModelTier.PRO_FALLBACK.value
             kwargs["api_key"] = settings.github_token
             kwargs["drop_params"] = True
-        response = litellm.completion(**kwargs)
+            response = litellm.completion(**kwargs)
             return response.choices[0].message.content
         raise e
 
@@ -164,6 +164,6 @@ def generate_chat_sync(
             kwargs["model"] = ModelTier.PRO_FALLBACK.value
             kwargs["api_key"] = settings.github_token
             kwargs["drop_params"] = True
-        response = litellm.completion(**kwargs)
+            response = litellm.completion(**kwargs)
             return response.choices[0].message.content
         raise e
