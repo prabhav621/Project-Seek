@@ -15,7 +15,7 @@ if settings.nvidia_api_key:
 
 
 def _route_model(model: str, contents: str) -> str:
-    \"\"\"Pass-through router.\"\"\"
+    """Pass-through router."""
     return model
 
 
@@ -182,3 +182,4 @@ def generate_chat_sync(
                 response = litellm.completion(**kwargs)
                 return response.choices[0].message.content
         raise e
+
