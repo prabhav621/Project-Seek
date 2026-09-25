@@ -58,10 +58,10 @@ def format_daily_forge(items: List[DailyItem], date: datetime = None) -> str:
         forge_parts.append("━━━━━━━━━━━━━━━━━━━━━━━━━\n")
 
     if curated_suggestion:
-        forge_parts.append("🔗 TODAY'S RABBIT HOLE")
+        forge_parts.append("🔗 WORLD FORGE (Current Affairs)")
         forge_parts.append(f"▶️ \"{curated_suggestion.title}\"")
         if curated_suggestion.suggestion_url:
-            forge_parts.append(f"[{curated_suggestion.suggestion_url}]")
+            forge_parts.append(f"{curated_suggestion.suggestion_url}")
         if curated_suggestion.suggestion_hook:
             forge_parts.append(f"↳ {curated_suggestion.suggestion_hook}\n")
         forge_parts.append("━━━━━━━━━━━━━━━━━━━━━━━━━\n")

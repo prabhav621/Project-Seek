@@ -67,6 +67,44 @@ async def build_and_send_forge():
                 inversion_prompt=inv.inversion_prompt
             ))
 
+            # 5. Current Affairs (Curated Suggestion)
+            try:
+                print("Fetching Current Affairs...")
+                # Get top interest domain
+                top_domain = (await db.execute(select(InterestVector).order_by(InterestVector.weight.desc()).limit(1))).scalars().first()
+                if top_domain:
+                    domain_name = top_domain.domain
+                    print(f"Top domain for news: {domain_name}")
+                    
+                    from duckduckgo_search import AsyncDDGS
+                    ddgs = AsyncDDGS()
+                    news_results = await ddgs.news(domain_name, max_results=1)
+                    
+                    if news_results:
+                        news = news_results[0]
+                        news_title = news.get('title', '')
+                        news_url = news.get('url', '')
+                        news_snippet = news.get('body', '')
+                        
+                        print(f"Found news: {news_title}")
+                        
+                        # Generate the hook
+                        from src.synthesis.suggestion_curator import generate_suggestion_hook
+                        # Pass the title + snippet for a better hook
+                        context = f"{news_title} - {news_snippet}"
+                        hook_res = generate_suggestion_hook(context, domain_name)
+                        
+                        db.add(DailyItem(
+                            content_id=None,
+                            item_type='curated_suggestion',
+                            title=news_title,
+                            suggestion_url=news_url,
+                            suggestion_hook=hook_res.suggestion_hook,
+                            domains=[domain_name]
+                        ))
+            except Exception as e:
+                print(f"Skipping Current Affairs due to error: {e}")
+
             # Mark processed
             for item in items:
                 item.processed = True
