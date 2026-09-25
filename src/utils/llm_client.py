@@ -45,7 +45,7 @@ async def generate_completion(model: str, contents: str, fallback: bool = True) 
         response = await litellm.acompletion(**kwargs)
         return response.choices[0].message.content
     except Exception as e:
-        if fallback and "nvidia/deepseek" in model:
+        if fallback and "deepseek" in model:
             print(f"Primary PRO node failed ({e}). Falling back to GitHub Models...")
             response = await litellm.acompletion(
                 model=ModelTier.PRO_FALLBACK.value, api_key=settings.github_token,
@@ -113,7 +113,7 @@ def generate_completion_sync(
         response = litellm.completion(**kwargs)
         return response.choices[0].message.content
     except Exception as e:
-        if fallback and "nvidia/deepseek" in model:
+        if fallback and "deepseek" in model:
             print(f"Primary PRO node failed ({e}). Falling back to GitHub Models...")
             kwargs["model"] = ModelTier.PRO_FALLBACK.value
             kwargs["api_key"] = settings.github_token
