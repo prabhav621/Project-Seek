@@ -1,10 +1,12 @@
+from apscheduler.schedulers.asyncio import AsyncIOScheduler
+import pytz
 ﻿import sys
 import asyncio
 import traceback
 from pathlib import Path
 from telegram import Update
 from telegram.constants import MessageEntityType
-from telegram.ext import Application, ContextTypes, MessageHandler, filters, MessageReactionHandler
+from telegram.ext import Application, ContextTypes, MessageHandler, filters, MessageReactionHandler, CommandHandler
 
 # Add project root to path
 root_path = Path(__file__).resolve().parent.parent.parent
@@ -307,11 +309,30 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 await message.reply_text("Your insights have been logged. The Forge adjusts.")
 
 
+
+async def handle_forge(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    await update.message.reply_text("🔨 Forging your daily digest... This might take 30-60 seconds.")
+    import subprocess
+    import sys
+    subprocess.Popen([sys.executable, "src/jobs/forge_builder.py"])
+
+
 async def post_init(application: Application):
     """Start the ingestion worker when the bot starts."""
     global _worker_running
     if not _worker_running:
         asyncio.create_task(_ingestion_worker(application.bot))
+
+    scheduler = AsyncIOScheduler(timezone=pytz.timezone('Asia/Kolkata'))
+    def run_forge():
+        import subprocess
+        import sys
+        subprocess.Popen([sys.executable, "src/jobs/forge_builder.py"])
+    
+    scheduler.add_job(run_forge, 'cron', hour=8, minute=0)
+    scheduler.start()
+    print("⏰ Daily Forge Scheduler started for 8:00 AM IST")
+
 
 
 def main():
@@ -332,6 +353,7 @@ def main():
     application.add_handler(MessageHandler(url_filter, handle_url))
     application.add_handler(MessageHandler(filters.TEXT & ~url_filter & ~filters.COMMAND, handle_text))
     application.add_handler(MessageReactionHandler(handle_reaction))
+    application.add_handler(CommandHandler("forge", handle_forge))
 
     application.post_init = post_init
 
