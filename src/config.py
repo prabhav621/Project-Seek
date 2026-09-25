@@ -1,4 +1,4 @@
-import os
+﻿import os
 from enum import Enum
 from pathlib import Path
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -6,8 +6,8 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 _ENV_FILE = str(Path(__file__).resolve().parent.parent / ".env")
 
 class ModelTier(str, Enum):
-    PRO = "nvidia_nim/deepseek-ai/deepseek-r1"
-    PRO_FALLBACK_1 = "github/meta-llama-3.1-405b-instruct"
+    PRO = "openrouter/deepseek/deepseek-r1:free"
+    PRO_FALLBACK_1 = "sambanova/Meta-Llama-3.1-405B-Instruct"
     PRO_FALLBACK_2 = "groq/deepseek-r1-distill-llama-70b"
     FLASH_LITE = "gemini/gemini-3.5-flash-lite"
     FLASH = "gemini/gemini-3.5-flash-lite"
@@ -35,13 +35,12 @@ class Settings(BaseSettings):
     groq_api_key: str = ""
     github_token: str = ""
     nvidia_api_key: str = ""
+    openrouter_api_key: str = ""
+    sambanova_api_key: str = ""
 
     model_config = SettingsConfigDict(env_file=_ENV_FILE, env_file_encoding="utf-8", extra="ignore")
 
     def get_model_for_task(self, task: TaskType) -> ModelTier:
-        """
-        Tiered Model Router logic based on task type.
-        """
         if task in (TaskType.DEEP_KATA, TaskType.SEEK_CHAT, TaskType.APHORISM, TaskType.INVERSION_PROMPT):
             return ModelTier.PRO
         elif task in (TaskType.QUICK_KATA, ):
