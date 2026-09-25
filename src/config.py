@@ -33,8 +33,6 @@ class Settings(BaseSettings):
     
     # LiteLLM Provider Keys
     groq_api_key: str = ""
-    github_token: str = ""
-    nvidia_api_key: str = ""
     openrouter_api_key: str = ""
     sambanova_api_key: str = ""
 
