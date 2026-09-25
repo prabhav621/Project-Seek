@@ -1,4 +1,4 @@
-import litellm
+﻿import litellm
 import asyncio
 import time
 from src.config import settings, ModelTier
@@ -15,13 +15,13 @@ if settings.nvidia_api_key:
 
 
 def _route_model(model: str, contents: str) -> str:
-    """Pass-through router. (Context overflow routing removed as Gemini handles 1M+ tokens)."""
+    \"\"\"Pass-through router.\"\"\"
     return model
 
 
-# ───────────────────────────────────────────────
+# =================================================================================================
 #  ASYNC versions (used by ingestion pipeline)
-# ───────────────────────────────────────────────
+# =================================================================================================
 
 async def generate_completion(model: str, contents: str, fallback: bool = True) -> str:
     target_model = _route_model(model, contents)
@@ -45,13 +45,19 @@ async def generate_completion(model: str, contents: str, fallback: bool = True) 
         response = await litellm.acompletion(**kwargs)
         return response.choices[0].message.content
     except Exception as e:
-        if fallback and "deepseek" in model:
-            print(f"Primary PRO node failed ({e}). Falling back to GitHub Models...")
-            response = await litellm.acompletion(
-                model=ModelTier.PRO_FALLBACK.value, api_key=settings.github_token,
-                messages=messages
-            )
-            return response.choices[0].message.content
+        if fallback and target_model == ModelTier.PRO.value:
+            print(f"Primary PRO node failed ({e}). Falling back to PRO_FALLBACK_1...")
+            try:
+                kwargs["model"] = ModelTier.PRO_FALLBACK_1.value
+                kwargs["api_key"] = settings.github_token
+                response = await litellm.acompletion(**kwargs)
+                return response.choices[0].message.content
+            except Exception as e2:
+                print(f"Fallback 1 failed ({e2}). Falling back to PRO_FALLBACK_2...")
+                kwargs["model"] = ModelTier.PRO_FALLBACK_2.value
+                kwargs["api_key"] = settings.groq_api_key
+                response = await litellm.acompletion(**kwargs)
+                return response.choices[0].message.content
         raise e
 
 
@@ -69,10 +75,9 @@ async def generate_embedding(model: str, inputs: list[str], dimensions: int = No
     return [d["embedding"] for d in response.data]
 
 
-# ───────────────────────────────────────────────
-#  SYNC versions (used by Daily Forge generators,
-#  Reply Analyzer, Seek Chat, Media Transcriber)
-# ───────────────────────────────────────────────
+# =================================================================================================
+#  SYNC versions (used by Daily Forge generators, Reply Analyzer, Seek Chat, Media Transcriber)
+# =================================================================================================
 
 def generate_completion_sync(
     model: str,
@@ -82,7 +87,6 @@ def generate_completion_sync(
     json_mode: bool = False,
     fallback: bool = True,
 ) -> str:
-    """Synchronous LLM call through LiteLLM. Used by all non-ingestion modules."""
     target_model = _route_model(model, contents)
 
     messages = []
@@ -113,13 +117,19 @@ def generate_completion_sync(
         response = litellm.completion(**kwargs)
         return response.choices[0].message.content
     except Exception as e:
-        if fallback and "deepseek" in model:
-            print(f"Primary PRO node failed ({e}). Falling back to GitHub Models...")
-            kwargs["model"] = ModelTier.PRO_FALLBACK.value
-            kwargs["api_key"] = settings.github_token
-            kwargs["drop_params"] = True
-            response = litellm.completion(**kwargs)
-            return response.choices[0].message.content
+        if fallback and target_model == ModelTier.PRO.value:
+            print(f"Primary PRO node failed ({e}). Falling back to PRO_FALLBACK_1...")
+            try:
+                kwargs["model"] = ModelTier.PRO_FALLBACK_1.value
+                kwargs["api_key"] = settings.github_token
+                response = litellm.completion(**kwargs)
+                return response.choices[0].message.content
+            except Exception as e2:
+                print(f"Fallback 1 failed ({e2}). Falling back to PRO_FALLBACK_2...")
+                kwargs["model"] = ModelTier.PRO_FALLBACK_2.value
+                kwargs["api_key"] = settings.groq_api_key
+                response = litellm.completion(**kwargs)
+                return response.choices[0].message.content
         raise e
 
 
@@ -130,7 +140,6 @@ def generate_chat_sync(
     temperature: float = 0.7,
     json_mode: bool = False,
 ) -> str:
-    """Synchronous multi-turn chat call. Used by Seek Chat."""
     full_messages = []
     if system_instruction:
         full_messages.append({"role": "system", "content": system_instruction})
@@ -159,11 +168,17 @@ def generate_chat_sync(
         response = litellm.completion(**kwargs)
         return response.choices[0].message.content
     except Exception as e:
-        if "nvidia/deepseek" in model:
-            print(f"Primary PRO node failed ({e}). Falling back to GitHub Models...")
-            kwargs["model"] = ModelTier.PRO_FALLBACK.value
-            kwargs["api_key"] = settings.github_token
-            kwargs["drop_params"] = True
-            response = litellm.completion(**kwargs)
-            return response.choices[0].message.content
+        if model == ModelTier.PRO.value:
+            print(f"Primary PRO node failed ({e}). Falling back to PRO_FALLBACK_1...")
+            try:
+                kwargs["model"] = ModelTier.PRO_FALLBACK_1.value
+                kwargs["api_key"] = settings.github_token
+                response = litellm.completion(**kwargs)
+                return response.choices[0].message.content
+            except Exception as e2:
+                print(f"Fallback 1 failed ({e2}). Falling back to PRO_FALLBACK_2...")
+                kwargs["model"] = ModelTier.PRO_FALLBACK_2.value
+                kwargs["api_key"] = settings.groq_api_key
+                response = litellm.completion(**kwargs)
+                return response.choices[0].message.content
         raise e
