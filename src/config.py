@@ -8,7 +8,7 @@ _ENV_FILE = str(Path(__file__).resolve().parent.parent / ".env")
 class ModelTier(str, Enum):
     PRO = "nvidia_nim/deepseek-ai/deepseek-r1"
     PRO_FALLBACK_1 = "github/meta-llama-3.1-405b-instruct"
-    PRO_FALLBACK_2 = "groq/llama3-70b-8192"
+    PRO_FALLBACK_2 = "groq/deepseek-r1-distill-llama-70b"
     FLASH_LITE = "gemini/gemini-3.5-flash-lite"
     FLASH = "gemini/gemini-3.5-flash-lite"
     EMBEDDING = "gemini/gemini-embedding-2"
