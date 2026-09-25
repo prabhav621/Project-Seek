@@ -7,8 +7,8 @@ _ENV_FILE = str(Path(__file__).resolve().parent.parent / ".env")
 
 class ModelTier(str, Enum):
     PRO = "openrouter/deepseek/deepseek-r1:free"
-    PRO_FALLBACK_1 = "sambanova/Meta-Llama-3.1-405B-Instruct"
-    PRO_FALLBACK_2 = "groq/deepseek-r1-distill-llama-70b"
+    PRO_FALLBACK_1 = "sambanova/Meta-Llama-3.1-70B-Instruct"
+    PRO_FALLBACK_2 = "groq/llama3-70b-8192"
     FLASH_LITE = "gemini/gemini-3.5-flash-lite"
     FLASH = "gemini/gemini-3.5-flash-lite"
     EMBEDDING = "gemini/gemini-embedding-2"
