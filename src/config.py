@@ -1,4 +1,4 @@
-import os
+﻿import os
 from enum import Enum
 from pathlib import Path
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -6,8 +6,8 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 _ENV_FILE = str(Path(__file__).resolve().parent.parent / ".env")
 
 class ModelTier(str, Enum):
-    PRO = "nvidia/deepseek-r1"
-    PRO_FALLBACK = "github/meta-llama-3.1-405b-instruct"
+    PRO = "gemini/gemini-3.5-flash"
+    PRO_FALLBACK = "gemini/gemini-3.5-flash"
     FLASH_LITE = "gemini/gemini-3.5-flash-lite"
     FLASH = "gemini/gemini-3.5-flash-lite"
     EMBEDDING = "gemini/gemini-embedding-2"
