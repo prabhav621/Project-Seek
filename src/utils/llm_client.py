@@ -57,6 +57,7 @@ def generate_completion_sync(model: str, messages: list, **kwargs) -> str:
                 model=model_str,
                 messages=messages,
                 drop_params=True,
+                timeout=45,
                 **kwargs
             )
             return response.choices[0].message.content
@@ -83,6 +84,7 @@ async def generate_completion_async(model: str, messages: list, **kwargs) -> str
                 model=model_str,
                 messages=messages,
                 drop_params=True,
+                timeout=45,
                 **kwargs
             )
             return response.choices[0].message.content

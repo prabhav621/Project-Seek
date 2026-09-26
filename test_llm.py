@@ -21,6 +21,7 @@ def test_all_matrix_nodes():
                 model=model_str,
                 messages=messages,
                 drop_params=True,
+                timeout=25,  # Faster timeout for diagnostic test
                 **kwargs
             )
             print(f"✅ SUCCESS | Node is ONLINE")
