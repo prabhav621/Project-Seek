@@ -3,7 +3,6 @@ import tempfile
 import os
 import logging
 from typing import Optional
-from crawl4ai import AsyncWebCrawler
 from google import genai
 from src.config import settings
 
@@ -48,59 +47,41 @@ async def extract_twitter_video_audio(url: str) -> Optional[str]:
             logger.debug(f"No video found or extraction failed for {url}: {e}")
             return None
 
-async def clean_twitter_markdown(raw_markdown: str) -> str:
-    """Uses Gemini Flash to strip unrelated UI elements and random replies from the raw thread."""
-    client = genai.Client(api_key=settings.gemini_api_key)
-    prompt = """
-    Below is a raw markdown scrape of a Twitter/X thread. It contains UI elements, sidebars, and often unrelated replies from other users.
-    Please extract ONLY the original author's thread/content. Stitch the thread together into clean, readable markdown.
-    Do not add extra commentary. If there is no coherent text, just return the raw text as best you can.
-    
-    RAW SCRAPE:
-    """
-    
-    try:
-        from src.config import ModelTier
-        from src.utils.retry import generate_content_with_retry
-        response = await asyncio.to_thread(
-            generate_content_with_retry, client,
-            model=ModelTier.FLASH_LITE.value,
-            contents=[prompt + "\n" + raw_markdown]
-        )
-        return response.text.strip()
-    except Exception as e:
-        logger.error(f"Failed to clean Twitter markdown with Gemini: {e}")
-        return raw_markdown
-
 async def scrape_twitter_thread(url: str) -> str:
     """
-    Scrapes X/Twitter threads using Crawl4AI (with JS scrolling), cleans the output with Gemini,
-    and extracts any embedded video audio using yt-dlp.
+    Scrapes X/Twitter using the vxtwitter API proxy, bypassing the login wall entirely.
+    Extracts embedded video audio using yt-dlp.
     """
-    js_code = """
-    async () => {
-        for(let i = 0; i < 4; i++) {
-            window.scrollBy(0, window.innerHeight * 1.5);
-            await new Promise(r => setTimeout(r, 1500));
-        }
-    }
-    """
+    import httpx
     
-    async with AsyncWebCrawler() as crawler:
-        result = await crawler.arun(
-            url=url,
-            js_code=js_code,
-            wait_for="article"
-        )
-        raw_markdown = result.markdown
+    # 1. Convert to vxtwitter API URL
+    # e.g., https://x.com/user/status/123 -> https://api.vxtwitter.com/user/status/123
+    api_url = url.replace("x.com", "api.vxtwitter.com").replace("twitter.com", "api.vxtwitter.com")
+    api_url = api_url.split("?")[0]  # Remove tracking params
+    
+    async with httpx.AsyncClient() as client:
+        try:
+            response = await client.get(api_url, timeout=15.0)
+            response.raise_for_status()
+            data = response.json()
+        except Exception as e:
+            logger.error(f"Failed to fetch from vxtwitter API: {e}")
+            return "Failed to extract text from Twitter."
+            
+    # 2. Extract perfectly clean text from the JSON
+    text = data.get("text", "")
+    author_name = data.get("user_name", "Unknown Author")
+    author_handle = data.get("user_screen_name", "")
+    
+    if not text:
+        return "Failed to extract meaningful text from Twitter."
         
-    if not raw_markdown:
-        return "Failed to extract text from Twitter."
-        
-    cleaned_thread = await clean_twitter_markdown(raw_markdown)
+    cleaned_thread = f"**Author:** {author_name} (@{author_handle})\n\n**Tweet Content:**\n{text}"
+    
+    # 3. Extract Video Audio (using yt-dlp on the original URL)
     video_transcript = await extract_twitter_video_audio(url)
     
-    final_output = f"### Twitter Thread Extracted Content\n\n{cleaned_thread}"
+    final_output = f"### X/Twitter Content\n\n{cleaned_thread}"
     if video_transcript:
         final_output += f"\n\n### Embedded Video Transcript\n{video_transcript}"
         
