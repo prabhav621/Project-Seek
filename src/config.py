@@ -4,8 +4,8 @@ from enum import Enum
 
 class ModelTier(str, Enum):
     # The 3-Titan Sovereign Matrix
-    PRO_PRIMARY = "nvidia_nim/nvidia/llama-3.1-nemotron-70b-instruct"                                  # Nvidia NIM — GLM-5-3 753B
-    PRO_FALLBACK_1 = "nvidia_nim/meta/llama-3.1-70b-instruct"                            # Nvidia NIM — Kimi-K3 2.8T
+    PRO_PRIMARY = "nvidia_nim/z.ai/glm-5-3"                                  # Nvidia NIM — GLM-5-3 753B
+    PRO_FALLBACK_1 = "nvidia_nim/moonshot/kimi-k3"                            # Nvidia NIM — Kimi-K3 2.8T
     PRO_FALLBACK_2 = "cloudflare/@cf/meta/llama-3.3-70b-instruct-fp8-fast"    # Cloudflare — Llama 3.3 70B
 
     # Fast models for tagging and basic tasks (Gemini free tier)

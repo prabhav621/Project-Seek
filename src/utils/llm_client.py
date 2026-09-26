@@ -21,10 +21,10 @@ def _apply_provider_kwargs(kwargs, target_model, tier_level="PRIMARY"):
 
     # The 3-Titan Sovereign Matrix Routing Logic
     elif tier_level == "PRIMARY":
-        # Nvidia NIM (Nemotron 70B)
+        # Nvidia NIM (GLM-5-3 753B)
         kwargs["api_key"] = settings.nvidia_api_key
     elif tier_level == "FALLBACK_1":
-        # Nvidia NIM (Llama 3.1 70B) — same key, different model
+        # Nvidia NIM (Kimi-K3 2.8T) — same key, different model
         kwargs["api_key"] = settings.nvidia_api_key
     elif tier_level == "FALLBACK_2":
         # Cloudflare (Llama 3.3 70B)
@@ -36,8 +36,8 @@ def _apply_provider_kwargs(kwargs, target_model, tier_level="PRIMARY"):
 def _get_cascade_sequence(target_model):
     if target_model == ModelTier.PRO_PRIMARY.value:
         return [
-            (ModelTier.PRO_PRIMARY.value, "PRIMARY", "Nvidia NIM (Nemotron 70B)"),
-            (ModelTier.PRO_FALLBACK_1.value, "FALLBACK_1", "Nvidia NIM (Llama 3.1 70B)"),
+            (ModelTier.PRO_PRIMARY.value, "PRIMARY", "Nvidia NIM (GLM-5-3 753B)"),
+            (ModelTier.PRO_FALLBACK_1.value, "FALLBACK_1", "Nvidia NIM (Kimi-K3 2.8T)"),
             (ModelTier.PRO_FALLBACK_2.value, "FALLBACK_2", "Cloudflare (Llama 3.3 70B)"),
         ]
     return [(target_model, "PRIMARY", target_model)]
