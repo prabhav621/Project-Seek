@@ -8,7 +8,7 @@ class ModelTier(str, Enum):
     PRO_FALLBACK_1 = "openai/deepseek-ai/DeepSeek-R1" 
     PRO_FALLBACK_2 = "openai/nvidia/nemotron-3-ultra-550b-a55b:free"
     PRO_FALLBACK_3 = "cloudflare/@cf/meta/llama-3.3-70b-instruct-fp8-fast"
-    PRO_FALLBACK_4 = "mistral/mistral-large-2411"
+    PRO_FALLBACK_4 = "mistral/mistral-large-latest"
     
     # Fast models for tagging and basic tasks
     FLASH = "gemini/gemini-3.5-flash-lite"
