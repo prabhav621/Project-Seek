@@ -13,7 +13,7 @@ root_path = Path(__file__).resolve().parent.parent.parent
 sys.path.append(str(root_path))
 
 from src.config import settings
-from src.db.session import SessionLocal
+from src.db.session import SessionLocal, SyncSessionLocal
 from sqlalchemy import select
 from src.db.models import DailyItem, InterestVector
 from src.intelligence.reply_analyzer import ReplyAnalyzer
@@ -235,7 +235,8 @@ async def handle_reaction(update: Update, context: ContextTypes.DEFAULT_TYPE):
             for item in items:
                 if item.engagement == 'pending':
                     item.engagement = 'read'
-                    update_drift(db, str(item.id), 'read')
+                    # update_drift uses sync ORM — run in thread with its own sync session
+                    await asyncio.to_thread(_update_drift_sync, str(item.id), 'read')
             await db.commit()
 
 
@@ -246,11 +247,11 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     chat = context.user_data.get('seek_chat')
     if chat and not chat.is_finished:
-        response_text = chat.send_message(message.text)
+        response_text = await asyncio.to_thread(chat.send_message, message.text)
         await message.reply_text(response_text)
 
         if chat.is_finished:
-            summary = chat.summarize_conversation()
+            summary = await asyncio.to_thread(chat.summarize_conversation)
 
             async with SessionLocal() as db:
                 for topic in summary.domain_shifts:
@@ -275,7 +276,7 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
             analyzer = ReplyAnalyzer()
             try:
-                analysis = analyzer.analyze(reply_text, original_item_text)
+                analysis = await asyncio.to_thread(analyzer.analyze, reply_text, original_item_text)
             except Exception as e:
                 await message.reply_text("Failed to analyze your reply.")
                 return
@@ -283,11 +284,12 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
             engagement = 'debated' if analysis.agreement_level in ['disagree', 'strong_disagree'] else 'responded'
             analysis_dict = analysis.model_dump()
 
-            update_drift(
-                db=db,
-                item_id=str(latest_item.id),
-                engagement_type=engagement,
-                reply_analysis=analysis_dict
+            # update_drift uses sync ORM — run in thread with its own sync session
+            await asyncio.to_thread(
+                _update_drift_sync,
+                str(latest_item.id),
+                engagement,
+                analysis_dict
             )
 
             latest_item.engagement = engagement
@@ -301,7 +303,7 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 context_item = DailyItemResponse.model_validate(latest_item)
 
                 chat = SeekChat(context_item=context_item, top_domains=top_domains)
-                response_text = chat.send_message(reply_text)
+                response_text = await asyncio.to_thread(chat.send_message, reply_text)
                 context.user_data['seek_chat'] = chat
 
                 await message.reply_text(response_text)
@@ -310,11 +312,19 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 
 
+def _update_drift_sync(item_id: str, engagement_type: str, reply_analysis: dict = None):
+    """Thread-safe wrapper for update_drift. Creates its own sync session."""
+    db = SyncSessionLocal()
+    try:
+        update_drift(db, item_id, engagement_type, reply_analysis)
+    finally:
+        db.close()
+
+
 async def handle_forge(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text("🔨 Forging your daily digest... This might take 30-60 seconds.")
-    import subprocess
-    import sys
-    subprocess.Popen([sys.executable, "src/jobs/forge_builder.py"])
+    from src.jobs.daily_forge import send_forge
+    asyncio.create_task(send_forge())
 
 
 async def post_init(application: Application):
@@ -324,12 +334,12 @@ async def post_init(application: Application):
         asyncio.create_task(_ingestion_worker(application.bot))
 
     scheduler = AsyncIOScheduler(timezone=pytz.timezone('Asia/Kolkata'))
-    def run_forge():
-        import subprocess
-        import sys
-        subprocess.Popen([sys.executable, "src/jobs/forge_builder.py"])
-    
-    scheduler.add_job(run_forge, 'cron', hour=8, minute=0)
+
+    async def scheduled_forge():
+        from src.jobs.daily_forge import send_forge
+        await send_forge()
+
+    scheduler.add_job(scheduled_forge, 'cron', hour=8, minute=0)
     scheduler.start()
     print("⏰ Daily Forge Scheduler started for 8:00 AM IST")
 

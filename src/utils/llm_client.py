@@ -1,6 +1,7 @@
 import litellm
 import logging
 import os
+import time
 from src.config import settings, ModelTier
 from src.utils.dynamic_router import get_top_free_models
 
@@ -63,7 +64,29 @@ def _get_cascade_sequence(target_model):
         
     return [(target_model, 30, target_model)]
 
-def generate_completion_sync(model: str, messages: list, **kwargs) -> str:
+def generate_completion_sync(model: str, messages: list = None, **kwargs) -> str:
+    """
+    Synchronous completion with 5-Slot cascade.
+    Accepts either:
+      - messages: list of {"role": ..., "content": ...} dicts (direct callers)
+      - contents: str (retry.py adapter pattern, auto-converted to messages)
+    Additional kwargs: system_instruction, temperature, json_mode
+    """
+    # ─── Adapter: convert 'contents' string to messages list ───
+    if messages is None:
+        messages = []
+    contents = kwargs.pop("contents", None)
+    system_instruction = kwargs.pop("system_instruction", None)
+    temperature = kwargs.pop("temperature", None)
+    json_mode = kwargs.pop("json_mode", False)
+
+    if contents and not messages:
+        messages = [{"role": "user", "content": str(contents)}]
+    if system_instruction:
+        messages = [{"role": "system", "content": system_instruction}] + messages
+    if temperature is not None:
+        kwargs["temperature"] = temperature
+
     cascade = _get_cascade_sequence(model)
 
     if "max_tokens" not in kwargs:
@@ -72,6 +95,9 @@ def generate_completion_sync(model: str, messages: list, **kwargs) -> str:
     for model_str, timeout_sec, name in cascade:
         kwargs = _apply_provider_kwargs(kwargs, model_str)
         try:
+            # Sync throttle: prevents rate limit violations.
+            # Safe because sync callers run inside asyncio.to_thread().
+            time.sleep(4.0)
             print(f"\n📡 Sending request to {name} [Timeout: {timeout_sec}s]...")
             response = litellm.completion(
                 model=model_str,
@@ -90,7 +116,25 @@ def generate_completion_sync(model: str, messages: list, **kwargs) -> str:
     print(f"❌ {error_msg}")
     raise RuntimeError(error_msg)
 
-async def generate_completion_async(model: str, messages: list, **kwargs) -> str:
+async def generate_completion_async(model: str, messages: list = None, **kwargs) -> str:
+    """
+    Async completion with 5-Slot cascade.
+    Accepts both messages (list) and contents (str) patterns.
+    """
+    # ─── Adapter: convert 'contents' string to messages list ───
+    if messages is None:
+        messages = []
+    contents = kwargs.pop("contents", None)
+    system_instruction = kwargs.pop("system_instruction", None)
+    temperature = kwargs.pop("temperature", None)
+
+    if contents and not messages:
+        messages = [{"role": "user", "content": str(contents)}]
+    if system_instruction:
+        messages = [{"role": "system", "content": system_instruction}] + messages
+    if temperature is not None:
+        kwargs["temperature"] = temperature
+
     cascade = _get_cascade_sequence(model)
 
     if "max_tokens" not in kwargs:
@@ -113,3 +157,15 @@ async def generate_completion_async(model: str, messages: list, **kwargs) -> str
             continue
 
     raise RuntimeError("Async FATAL ERROR: All 5 cascade slots exhausted.")
+
+
+def generate_chat_sync(model: str, messages: list, system_instruction: str = None, temperature: float = 0.7) -> str:
+    """
+    Synchronous multi-turn chat wrapper. Accepts a full message history list
+    and optional system instruction, then routes through the 5-Slot cascade.
+    Used by SeekChat for Socratic dialogue.
+    """
+    if system_instruction:
+        messages = [{"role": "system", "content": system_instruction}] + messages
+    return generate_completion_sync(model, messages, temperature=temperature)
+

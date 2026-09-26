@@ -4,7 +4,7 @@ import asyncio
 from functools import wraps
 from src.utils.rate_limit import get_limiter_for_model
 from src.config import ModelTier
-from src.utils.llm_client import generate_completion, generate_embedding, generate_completion_sync
+from src.utils.llm_client import generate_completion_async, generate_completion_sync
 
 logger = logging.getLogger(__name__)
 
@@ -54,7 +54,7 @@ def with_retry(max_retries=3, initial_delay=2.0):
                     return await func(*args, **kwargs)
                 except Exception as e:
                     status = getattr(e, 'status_code', None)
-                    if status in (429, 500, 502, 503) or "timeout" in str(e).lower() or attempt < max_retries:
+                    if status in (429, 500, 502, 503) or "timeout" in str(e).lower():
                         if attempt == max_retries:
                             logger.error(f"Failed after {max_retries} retries: {e}")
                             raise
@@ -62,7 +62,7 @@ def with_retry(max_retries=3, initial_delay=2.0):
                         await asyncio.sleep(delay)
                         delay *= 2
                     else:
-                        raise
+                        raise  # Non-transient error — fail fast
         return async_wrapper
     return decorator
 
@@ -93,13 +93,16 @@ async def generate_content_async_with_retry(client, **kwargs):
     limiter = get_limiter_for_model_string(model)
     await limiter.acquire()
 
-    text = await generate_completion(model=model, contents=contents)
+    text = await generate_completion_async(model=model, contents=contents)
     return DummyResponse(text)
 
 
 @with_retry(max_retries=3, initial_delay=2.0)
 async def embed_content_async_with_retry(client, **kwargs):
-    model = kwargs.get("model", ModelTier.EMBEDDING.value)
+    from google import genai
+    from src.config import settings
+
+    model = kwargs.get("model", "gemini-embedding-2")
     content = kwargs.get("content", "")
     if "contents" in kwargs and not content:
         content = kwargs["contents"]
@@ -113,11 +116,21 @@ async def embed_content_async_with_retry(client, **kwargs):
     limiter = get_limiter_for_model_string(model)
     await limiter.acquire()
 
+    # Strip litellm prefix for direct Google SDK call
+    raw_model = model.replace("gemini/", "") if model.startswith("gemini/") else model
+
+    genai_client = genai.Client(api_key=settings.gemini_api_key)
+
     if isinstance(content, str):
         content = [content]
 
-    vecs = await generate_embedding(model=model, inputs=content, dimensions=dimensions)
-    return DummyEmbeddingResponse(vecs)
+    response = await asyncio.to_thread(
+        genai_client.models.embed_content,
+        model=raw_model,
+        contents=content,
+        config={"output_dimensionality": dimensions} if dimensions else None,
+    )
+    return response
 
 
 # ─── SYNC functions (Daily Forge, Reply Analyzer, Seek Chat, etc.) ─────
