@@ -49,43 +49,55 @@ async def extract_twitter_video_audio(url: str) -> Optional[str]:
 
 async def scrape_twitter_thread(url: str) -> str:
     """
-    Scrapes X/Twitter using the vxtwitter API proxy, bypassing the login wall entirely.
+    Scrapes X/Twitter using the fxtwitter/vxtwitter API proxy, bypassing the login wall entirely.
     Extracts embedded video audio using yt-dlp.
     """
-    import httpx
+    import requests
+    import json
     
     # Base URL extraction
     base_path = url.replace("https://x.com", "").replace("https://twitter.com", "").split("?")[0]
     
-    # Try vxtwitter first, fallback to fxtwitter
+    # Try fxtwitter first (more lenient with datacenter IPs), fallback to vxtwitter
     endpoints = [
-        f"https://api.vxtwitter.com{base_path}",
-        f"https://api.fxtwitter.com{base_path}"
+        f"https://api.fxtwitter.com{base_path}",
+        f"https://api.vxtwitter.com{base_path}"
     ]
     
     headers = {
-        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+        "Accept": "application/json"
     }
     
     data = None
-    async with httpx.AsyncClient(verify=False) as client:
+    
+    def fetch_api():
+        import warnings
+        from urllib3.exceptions import InsecureRequestWarning
+        warnings.simplefilter('ignore', InsecureRequestWarning)
+        
         for api_url in endpoints:
             try:
-                response = await client.get(api_url, headers=headers, timeout=15.0)
+                response = requests.get(api_url, headers=headers, timeout=15.0, verify=False)
                 response.raise_for_status()
-                data = response.json()
-                break  # Success, exit fallback loop
+                return response.json()
             except Exception as e:
                 logger.warning(f"Failed to fetch from {api_url}: {e}")
                 continue
+        return None
+
+    data = await asyncio.to_thread(fetch_api)
                 
     if not data:
         return "Failed to extract text from Twitter."
             
-    # 2. Extract perfectly clean text from the JSON
-    text = data.get("text", "")
-    author_name = data.get("user_name", "Unknown Author")
-    author_handle = data.get("user_screen_name", "")
+    # Extract perfectly clean text from the JSON
+    # fxtwitter uses 'tweet' dict, vxtwitter returns flat dict. Handle both.
+    tweet_data = data.get("tweet", data) if "tweet" in data else data
+    
+    text = tweet_data.get("text", "")
+    author_name = tweet_data.get("author", {}).get("name") or tweet_data.get("user_name", "Unknown Author")
+    author_handle = tweet_data.get("author", {}).get("screen_name") or tweet_data.get("user_screen_name", "")
     
     if not text:
         return "Failed to extract meaningful text from Twitter."
