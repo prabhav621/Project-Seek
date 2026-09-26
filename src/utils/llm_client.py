@@ -1,156 +1,104 @@
 ﻿import litellm
-import asyncio
-import time
-from src.config import settings, ModelTier
+import logging
 import os
+from src.config import settings, ModelTier
 
-# Ensure environment variables are loaded for litellm
-os.environ["GEMINI_API_KEY"] = settings.gemini_api_key
-if settings.groq_api_key:
-    os.environ["GROQ_API_KEY"] = settings.groq_api_key
-if settings.openrouter_api_key:
-    os.environ["OPENROUTER_API_KEY"] = settings.openrouter_api_key
+logger = logging.getLogger(__name__)
 
-def _route_model(model: str, contents: str) -> str:
-    return model
+# Apply environmental variables for LiteLLM providers that strictly require them
+if settings.cloudflare_api_key:
+    os.environ["CLOUDFLARE_API_KEY"] = settings.cloudflare_api_key
+if settings.cloudflare_account_id:
+    os.environ["CLOUDFLARE_ACCOUNT_ID"] = settings.cloudflare_account_id
 
-def _apply_provider_kwargs(kwargs, target_model):
+def _apply_provider_kwargs(kwargs, target_model, tier_level="PRIMARY"):
+    # Clear out any leftover api_base from previous loops
+    if "api_base" in kwargs:
+        del kwargs["api_base"]
+        
     if "gemini" in target_model:
         kwargs["api_key"] = settings.gemini_api_key
-    elif "groq" in target_model:
-        kwargs["api_key"] = settings.groq_api_key
-    elif "openrouter" in target_model:
-        kwargs["api_key"] = settings.openrouter_api_key
-    elif "sambanova" in target_model:
-        kwargs["api_key"] = settings.sambanova_api_key
-        kwargs["api_base"] = "https://api.sambanova.ai/v1"
-        kwargs["model"] = target_model.replace("sambanova/", "openai/")
+    
+    # The 5-Titan Matrix Routing Logic
+    elif tier_level == "PRIMARY":
+        # SiliconFlow
+        kwargs["api_key"] = settings.siliconflow_api_key
+        kwargs["api_base"] = "https://api.siliconflow.cn/v1"
+    elif tier_level == "FALLBACK_1":
+        # glhf.chat
+        kwargs["api_key"] = settings.glhf_api_key
+        kwargs["api_base"] = "https://glhf.chat/api/openai/v1"
+    elif tier_level == "FALLBACK_2":
+        # Kilo Code
+        kwargs["api_key"] = settings.kilo_api_key or "dummy-key"
+        kwargs["api_base"] = "https://api.kilo.ai/v1"
+    elif tier_level == "FALLBACK_3":
+        # Cloudflare
+        # API keys are loaded via os.environ for Cloudflare in LiteLLM
+        pass
+    elif tier_level == "FALLBACK_4":
+        # Mistral
+        kwargs["api_key"] = settings.mistral_api_key
+
     return kwargs
 
-# =================================================================================================
-#  ASYNC versions (used by ingestion pipeline)
-# =================================================================================================
+def _get_cascade_sequence(target_model):
+    if target_model == ModelTier.PRO_PRIMARY.value:
+        return [
+            (ModelTier.PRO_PRIMARY.value, "PRIMARY", "SiliconFlow (DeepSeek-R1 671B)"),
+            (ModelTier.PRO_FALLBACK_1.value, "FALLBACK_1", "glhf.chat (DeepSeek-R1 671B)"),
+            (ModelTier.PRO_FALLBACK_2.value, "FALLBACK_2", "Kilo Code (Nemotron 550B MoE)"),
+            (ModelTier.PRO_FALLBACK_3.value, "FALLBACK_3", "Cloudflare (Llama 3.3 70B)"),
+            (ModelTier.PRO_FALLBACK_4.value, "FALLBACK_4", "Mistral (Mistral Large 123B)")
+        ]
+    return [(target_model, "PRIMARY", target_model)]
 
-async def generate_completion(model: str, contents: str, fallback: bool = True) -> str:
-    target_model = _route_model(model, contents)
-    messages = [{"role": "user", "content": contents}]
+def generate_completion_sync(model: str, messages: list, **kwargs) -> str:
+    cascade = _get_cascade_sequence(model)
     
-    kwargs = {"model": target_model, "messages": messages, "drop_params": True}
-    kwargs = _apply_provider_kwargs(kwargs, target_model)
+    # Crucial Deep Research Precaution: Cap tokens to prevent draining unbilled limits
+    if "max_tokens" not in kwargs:
+        kwargs["max_tokens"] = 2048
 
-    try:
-        response = await litellm.acompletion(**kwargs)
-        return response.choices[0].message.content
-    except Exception as e:
-        if fallback and target_model == ModelTier.PRO.value:
-            print(f"Primary PRO (OpenRouter) failed ({e}). Falling back to SambaNova...")
-            try:
-                kwargs["model"] = ModelTier.PRO_FALLBACK_1.value
-                kwargs = _apply_provider_kwargs(kwargs, ModelTier.PRO_FALLBACK_1.value)
-                response = await litellm.acompletion(**kwargs)
-                return response.choices[0].message.content
-            except Exception as e2:
-                print(f"Fallback 1 (SambaNova) failed ({e2}). Falling back to Groq...")
-                if "api_base" in kwargs:
-                    del kwargs["api_base"]
-                kwargs["model"] = ModelTier.PRO_FALLBACK_2.value
-                kwargs = _apply_provider_kwargs(kwargs, ModelTier.PRO_FALLBACK_2.value)
-                response = await litellm.acompletion(**kwargs)
-                return response.choices[0].message.content
-        raise e
+    for model_str, tier, name in cascade:
+        kwargs = _apply_provider_kwargs(kwargs, model_str, tier_level=tier)
+        try:
+            print(f"\n📡 Sending request to {name}...")
+            response = litellm.completion(
+                model=model_str,
+                messages=messages,
+                drop_params=True,
+                **kwargs
+            )
+            return response.choices[0].message.content
+        except Exception as e:
+            print(f"❌ {name} failed: {e}")
+            logger.warning(f"{name} failed: {e}")
+            continue
 
+    error_msg = "FATAL ERROR: All 5 Titan fallbacks exhausted."
+    print(f"❌ {error_msg}")
+    raise RuntimeError(error_msg)
 
-async def generate_embedding(model: str, inputs: list[str], dimensions: int = None) -> list[list[float]]:
-    kwargs = {"model": model, "input": inputs}
-    if "gemini" in model:
-        kwargs["api_key"] = settings.gemini_api_key
-    if dimensions:
-        kwargs["dimensions"] = dimensions
-    response = await litellm.aembedding(**kwargs)
-    return [d["embedding"] for d in response.data]
+async def generate_completion_async(model: str, messages: list, **kwargs) -> str:
+    cascade = _get_cascade_sequence(model)
+    
+    if "max_tokens" not in kwargs:
+        kwargs["max_tokens"] = 2048
 
+    for model_str, tier, name in cascade:
+        kwargs = _apply_provider_kwargs(kwargs, model_str, tier_level=tier)
+        try:
+            logger.info(f"Async request to {name}...")
+            response = await litellm.acompletion(
+                model=model_str,
+                messages=messages,
+                drop_params=True,
+                **kwargs
+            )
+            return response.choices[0].message.content
+        except Exception as e:
+            logger.warning(f"Async {name} failed: {e}")
+            continue
 
-# =================================================================================================
-#  SYNC versions (used by Daily Forge generators, Reply Analyzer, Seek Chat, Media Transcriber)
-# =================================================================================================
-
-def generate_completion_sync(
-    model: str,
-    contents: str,
-    system_instruction: str = None,
-    temperature: float = 0.7,
-    json_mode: bool = False,
-    fallback: bool = True,
-) -> str:
-    target_model = _route_model(model, contents)
-    messages = []
-    if system_instruction:
-        messages.append({"role": "system", "content": system_instruction})
-    messages.append({"role": "user", "content": contents})
-
-    kwargs = {"model": target_model, "messages": messages, "temperature": temperature, "drop_params": True}
-    kwargs = _apply_provider_kwargs(kwargs, target_model)
-
-    if json_mode:
-        kwargs["response_format"] = {"type": "json_object"}
-
-    try:
-        response = litellm.completion(**kwargs)
-        return response.choices[0].message.content
-    except Exception as e:
-        if fallback and target_model == ModelTier.PRO.value:
-            print(f"Primary PRO (OpenRouter) failed ({e}). Falling back to SambaNova...")
-            try:
-                kwargs["model"] = ModelTier.PRO_FALLBACK_1.value
-                kwargs = _apply_provider_kwargs(kwargs, ModelTier.PRO_FALLBACK_1.value)
-                response = litellm.completion(**kwargs)
-                return response.choices[0].message.content
-            except Exception as e2:
-                print(f"Fallback 1 (SambaNova) failed ({e2}). Falling back to Groq...")
-                if "api_base" in kwargs:
-                    del kwargs["api_base"]
-                kwargs["model"] = ModelTier.PRO_FALLBACK_2.value
-                kwargs = _apply_provider_kwargs(kwargs, ModelTier.PRO_FALLBACK_2.value)
-                response = litellm.completion(**kwargs)
-                return response.choices[0].message.content
-        raise e
-
-
-def generate_chat_sync(
-    model: str,
-    messages: list,
-    system_instruction: str = None,
-    temperature: float = 0.7,
-    json_mode: bool = False,
-) -> str:
-    full_messages = []
-    if system_instruction:
-        full_messages.append({"role": "system", "content": system_instruction})
-    full_messages.extend(messages)
-
-    kwargs = {"model": model, "messages": full_messages, "temperature": temperature, "drop_params": True}
-    kwargs = _apply_provider_kwargs(kwargs, model)
-
-    if json_mode:
-        kwargs["response_format"] = {"type": "json_object"}
-
-    try:
-        response = litellm.completion(**kwargs)
-        return response.choices[0].message.content
-    except Exception as e:
-        if model == ModelTier.PRO.value:
-            print(f"Primary PRO (OpenRouter) failed ({e}). Falling back to SambaNova...")
-            try:
-                kwargs["model"] = ModelTier.PRO_FALLBACK_1.value
-                kwargs = _apply_provider_kwargs(kwargs, ModelTier.PRO_FALLBACK_1.value)
-                response = litellm.completion(**kwargs)
-                return response.choices[0].message.content
-            except Exception as e2:
-                print(f"Fallback 1 (SambaNova) failed ({e2}). Falling back to Groq...")
-                if "api_base" in kwargs:
-                    del kwargs["api_base"]
-                kwargs["model"] = ModelTier.PRO_FALLBACK_2.value
-                kwargs = _apply_provider_kwargs(kwargs, ModelTier.PRO_FALLBACK_2.value)
-                response = litellm.completion(**kwargs)
-                return response.choices[0].message.content
-        raise e
+    raise RuntimeError("Async FATAL ERROR: All 5 Titan fallbacks exhausted.")
