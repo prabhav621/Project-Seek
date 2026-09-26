@@ -3,12 +3,10 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 from enum import Enum
 
 class ModelTier(str, Enum):
-    # The 4-Titan Sovereign Matrix (Nvidia NIM x3 + Cloudflare)
-    PRO_PRIMARY = "nvidia_nim/nvidia/nemotron-3-ultra-550b-a55b"             # Nvidia NIM — Nemotron 550B
-    PRO_FALLBACK_1 = "nvidia_nim/moonshotai/kimi-k3"                          # Nvidia NIM — Kimi-K3 2.8T
-    PRO_FALLBACK_2 = "nvidia_nim/z-ai/glm-5.3"                                # Nvidia NIM — GLM-5.3 753B
-    PRO_FALLBACK_3 = "cloudflare/@cf/meta/llama-3.3-70b-instruct-fp8-fast"    # Cloudflare — Llama 3.3 70B
-
+    # STATIC ANCHORS FOR THE 5-SLOT MATRIX
+    PRO_PRIMARY = "nvidia_nim/nvidia/nemotron-3-ultra-550b-a55b"             # Slot 1: Nvidia 550B
+    PRO_SAFETY_NET = "cloudflare/@cf/meta/llama-3.3-70b-instruct-fp8-fast"    # Slot 5: Cloudflare 70B
+    
     # Fast models for tagging and basic tasks (Gemini free tier)
     FLASH = "gemini/gemini-3.5-flash-lite"
     FLASH_LITE = "gemini/gemini-3.5-flash-lite"
@@ -32,6 +30,7 @@ class Settings(BaseSettings):
 
     # The Sovereign Matrix Keys
     nvidia_api_key: str = ""
+    openrouter_api_key: str = ""
     cloudflare_api_key: str = ""
     cloudflare_account_id: str = ""
 
