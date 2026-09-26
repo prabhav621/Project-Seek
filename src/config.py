@@ -1,16 +1,15 @@
-﻿import os
+import os
 from pydantic_settings import BaseSettings, SettingsConfigDict
 from enum import Enum
 
 class ModelTier(str, Enum):
-    # The 5-Titan Matrix for PRO reasoning
-    PRO_PRIMARY = "openai/deepseek-ai/DeepSeek-R1"
-    PRO_FALLBACK_1 = "openai/deepseek-ai/DeepSeek-R1" 
-    PRO_FALLBACK_2 = "nvidia_nim/z.ai/glm-5-3"
-    PRO_FALLBACK_3 = "cloudflare/@cf/meta/llama-3.3-70b-instruct-fp8-fast"
-    PRO_FALLBACK_4 = "mistral/mistral-large-latest"
-    
-    # Fast models for tagging and basic tasks
+    # The 4-Titan Sovereign Matrix
+    PRO_PRIMARY = "openai/deepseek-ai/DeepSeek-R1"          # SiliconFlow — 671B MoE
+    PRO_FALLBACK_1 = "nvidia_nim/z.ai/glm-5-3"              # Nvidia NIM — GLM-5-3 753B
+    PRO_FALLBACK_2 = "nvidia_nim/moonshot/kimi-k3"           # Nvidia NIM — Kimi-K3 2.8T
+    PRO_FALLBACK_3 = "cloudflare/@cf/meta/llama-3.3-70b-instruct-fp8-fast"  # Cloudflare — Llama 3.3 70B
+
+    # Fast models for tagging and basic tasks (Gemini free tier)
     FLASH = "gemini/gemini-3.5-flash-lite"
     FLASH_LITE = "gemini/gemini-3.5-flash-lite"
 
@@ -30,19 +29,12 @@ class Settings(BaseSettings):
     telegram_bot_token: str = ""
     telegram_chat_id: str = ""
     residential_proxy_url: str = ""
-    
-    # The 5-Titan Matrix Keys
+
+    # The 4-Titan Sovereign Matrix Keys
     siliconflow_api_key: str = ""
-    glhf_api_key: str = ""
     nvidia_api_key: str = ""
     cloudflare_api_key: str = ""
     cloudflare_account_id: str = ""
-    mistral_api_key: str = ""
-    
-    # Legacy keys kept for safety, can be ignored
-    groq_api_key: str = ""
-    openrouter_api_key: str = ""
-    sambanova_api_key: str = ""
 
     model_config = SettingsConfigDict(
         env_file=".env",
