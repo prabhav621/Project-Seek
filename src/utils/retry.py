@@ -13,13 +13,11 @@ def get_limiter_for_model_string(model_name: str):
     if not model_name:
         return get_limiter_for_model(ModelTier.FLASH)
     model_name = model_name.lower()
-    if "nvidia" in model_name or "github" in model_name:
-        return get_limiter_for_model(ModelTier.PRO)
-    elif "groq" in model_name:
-        return get_limiter_for_model(ModelTier.FLASH_LITE)
+    if "nvidia" in model_name or "openrouter" in model_name:
+        return get_limiter_for_model(ModelTier.PRO_PRIMARY)
+    elif "cloudflare" in model_name:
+        return get_limiter_for_model(ModelTier.PRO_SAFETY_NET)
     elif "gemini" in model_name:
-        if "embedding" in model_name:
-            return get_limiter_for_model(ModelTier.EMBEDDING)
         return get_limiter_for_model(ModelTier.FLASH)
     return get_limiter_for_model(ModelTier.FLASH)
 

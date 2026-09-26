@@ -50,32 +50,42 @@ def test_all_matrix_nodes():
     print("\n" + "=" * 60)
     print(f"🎯 MATRIX DIAGNOSTIC COMPLETE: {success_count}/{total} Nodes Online")
 
-def test_mock_kata():
-    print("\n\n🥋 SEEK ENGINE: MOCK KATA GENERATION")
+def test_daily_forge():
+    print("\n\n⚒️ SEEK ENGINE: MOCK DAILY FORGE GENERATION")
     print("=" * 60)
-    print("This tests the pipeline interactions and rate limit isolation.")
+    print("Simulating a morning Daily Forge (Deep Kata, Aphorism, Inversion, Quick Kata).")
+    print("Testing concurrent rate limit isolation between Nvidia NIM and Gemini.\n")
     
-    # 1. Simulate tagging via Gemini Flash (Fast/Cheap)
-    print("\n[STEP 1] Generating Domain Tags using Gemini (FLASH_LITE tier)...")
-    tag_messages = [{"role": "user", "content": "Extract 3 tags from this text: 'Apple releases new M4 Macbook Pro with advanced neural engine.' Format as CSV."}]
+    # 1. Deep Kata (PRO Node)
+    print("[STEP 1] Forging Deep Kata (PRO tier: Nvidia/OpenRouter)...")
+    kata_messages = [{"role": "user", "content": "Write a 2-sentence philosophical Deep Kata about AI architecture."}]
     start_t = time.time()
     try:
-        tag_res = generate_completion_sync(ModelTier.FLASH_LITE.value, tag_messages, max_tokens=20)
-        print(f"✅ Gemini Tagging Complete ({time.time() - start_t:.2f}s): {tag_res}")
-    except Exception as e:
-        print(f"❌ Gemini Tagging Failed: {e}")
-
-    # 2. Simulate Deep Kata generation via PRO Node
-    print("\n[STEP 2] Generating Deep Kata using Sovereign Matrix (PRO tier)...")
-    kata_messages = [{"role": "user", "content": "Write a 2-sentence philosophical synthesis about silicon and intelligence."}]
-    start_t = time.time()
-    try:
-        # This will hit the waterfall (Nemotron 550B -> OpenRouter -> Cloudflare)
         kata_res = generate_completion_sync(ModelTier.PRO_PRIMARY.value, kata_messages, max_tokens=150)
-        print(f"✅ PRO Kata Generation Complete ({time.time() - start_t:.2f}s):\n{kata_res}")
+        print(f"✅ Deep Kata Complete ({time.time() - start_t:.2f}s):\n   {kata_res}")
     except Exception as e:
-        print(f"❌ PRO Kata Generation Failed: {e}")
+        print(f"❌ Deep Kata Failed: {e}")
+
+    # 2. Aphorism (PRO Node)
+    print("\n[STEP 2] Forging Aphorism (PRO tier)...")
+    aphorism_messages = [{"role": "user", "content": "Give me a one-sentence aphorism about resilience."}]
+    start_t = time.time()
+    try:
+        aph_res = generate_completion_sync(ModelTier.PRO_PRIMARY.value, aphorism_messages, max_tokens=50)
+        print(f"✅ Aphorism Complete ({time.time() - start_t:.2f}s):\n   {aph_res}")
+    except Exception as e:
+        print(f"❌ Aphorism Failed: {e}")
+
+    # 3. Quick Kata (FLASH Node - Gemini)
+    print("\n[STEP 3] Forging Quick Kata (FLASH tier: Gemini)...")
+    qk_messages = [{"role": "user", "content": "Give me a fast summary of quantum mechanics."}]
+    start_t = time.time()
+    try:
+        qk_res = generate_completion_sync(ModelTier.FLASH.value, qk_messages, max_tokens=100)
+        print(f"✅ Quick Kata (Gemini) Complete ({time.time() - start_t:.2f}s):\n   {qk_res}")
+    except Exception as e:
+        print(f"❌ Quick Kata Failed: {e}")
 
 if __name__ == "__main__":
     test_all_matrix_nodes()
-    test_mock_kata()
+    test_daily_forge()
