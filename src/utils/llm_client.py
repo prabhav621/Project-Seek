@@ -29,9 +29,9 @@ def _apply_provider_kwargs(kwargs, target_model, tier_level="PRIMARY"):
         kwargs["api_key"] = settings.glhf_api_key
         kwargs["api_base"] = "https://glhf.chat/api/openai/v1"
     elif tier_level == "FALLBACK_2":
-        # Kilo Code
-        kwargs["api_key"] = settings.kilo_api_key or "dummy-key"
-        kwargs["api_base"] = "https://api.kilo.ai/v1"
+        # Nvidia NIM
+        kwargs["api_key"] = settings.nvidia_api_key
+        # LiteLLM handles api_base automatically for nvidia_nim/
     elif tier_level == "FALLBACK_3":
         # Cloudflare
         # API keys are loaded via os.environ for Cloudflare in LiteLLM
@@ -47,7 +47,7 @@ def _get_cascade_sequence(target_model):
         return [
             (ModelTier.PRO_PRIMARY.value, "PRIMARY", "SiliconFlow (DeepSeek-R1 671B)"),
             (ModelTier.PRO_FALLBACK_1.value, "FALLBACK_1", "glhf.chat (DeepSeek-R1 671B)"),
-            (ModelTier.PRO_FALLBACK_2.value, "FALLBACK_2", "Kilo Code (Nemotron 550B MoE)"),
+            (ModelTier.PRO_FALLBACK_2.value, "FALLBACK_2", "Nvidia NIM (GLM-5-3 753B)"),
             (ModelTier.PRO_FALLBACK_3.value, "FALLBACK_3", "Cloudflare (Llama 3.3 70B)"),
             (ModelTier.PRO_FALLBACK_4.value, "FALLBACK_4", "Mistral (Mistral Large 123B)")
         ]

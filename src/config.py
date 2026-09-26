@@ -6,7 +6,7 @@ class ModelTier(str, Enum):
     # The 5-Titan Matrix for PRO reasoning
     PRO_PRIMARY = "openai/deepseek-ai/DeepSeek-R1"
     PRO_FALLBACK_1 = "openai/deepseek-ai/DeepSeek-R1" 
-    PRO_FALLBACK_2 = "openai/nvidia/nemotron-3-ultra-550b-a55b:free"
+    PRO_FALLBACK_2 = "nvidia_nim/z.ai/glm-5-3"
     PRO_FALLBACK_3 = "cloudflare/@cf/meta/llama-3.3-70b-instruct-fp8-fast"
     PRO_FALLBACK_4 = "mistral/mistral-large-latest"
     
@@ -34,7 +34,7 @@ class Settings(BaseSettings):
     # The 5-Titan Matrix Keys
     siliconflow_api_key: str = ""
     glhf_api_key: str = ""
-    kilo_api_key: str = ""
+    nvidia_api_key: str = ""
     cloudflare_api_key: str = ""
     cloudflare_account_id: str = ""
     mistral_api_key: str = ""
