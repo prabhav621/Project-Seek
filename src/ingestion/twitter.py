@@ -54,19 +54,33 @@ async def scrape_twitter_thread(url: str) -> str:
     """
     import httpx
     
-    # 1. Convert to vxtwitter API URL
-    # e.g., https://x.com/user/status/123 -> https://api.vxtwitter.com/user/status/123
-    api_url = url.replace("x.com", "api.vxtwitter.com").replace("twitter.com", "api.vxtwitter.com")
-    api_url = api_url.split("?")[0]  # Remove tracking params
+    # Base URL extraction
+    base_path = url.replace("https://x.com", "").replace("https://twitter.com", "").split("?")[0]
     
-    async with httpx.AsyncClient() as client:
-        try:
-            response = await client.get(api_url, timeout=15.0)
-            response.raise_for_status()
-            data = response.json()
-        except Exception as e:
-            logger.error(f"Failed to fetch from vxtwitter API: {e}")
-            return "Failed to extract text from Twitter."
+    # Try vxtwitter first, fallback to fxtwitter
+    endpoints = [
+        f"https://api.vxtwitter.com{base_path}",
+        f"https://api.fxtwitter.com{base_path}"
+    ]
+    
+    headers = {
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+    }
+    
+    data = None
+    async with httpx.AsyncClient(verify=False) as client:
+        for api_url in endpoints:
+            try:
+                response = await client.get(api_url, headers=headers, timeout=15.0)
+                response.raise_for_status()
+                data = response.json()
+                break  # Success, exit fallback loop
+            except Exception as e:
+                logger.warning(f"Failed to fetch from {api_url}: {e}")
+                continue
+                
+    if not data:
+        return "Failed to extract text from Twitter."
             
     # 2. Extract perfectly clean text from the JSON
     text = data.get("text", "")
