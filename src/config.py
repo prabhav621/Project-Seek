@@ -3,11 +3,10 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 from enum import Enum
 
 class ModelTier(str, Enum):
-    # The 4-Titan Sovereign Matrix
-    PRO_PRIMARY = "openai/deepseek-ai/DeepSeek-R1"          # SiliconFlow — 671B MoE
-    PRO_FALLBACK_1 = "nvidia_nim/z.ai/glm-5-3"              # Nvidia NIM — GLM-5-3 753B
-    PRO_FALLBACK_2 = "nvidia_nim/moonshot/kimi-k3"           # Nvidia NIM — Kimi-K3 2.8T
-    PRO_FALLBACK_3 = "cloudflare/@cf/meta/llama-3.3-70b-instruct-fp8-fast"  # Cloudflare — Llama 3.3 70B
+    # The 3-Titan Sovereign Matrix
+    PRO_PRIMARY = "nvidia_nim/z.ai/glm-5-3"                                  # Nvidia NIM — GLM-5-3 753B
+    PRO_FALLBACK_1 = "nvidia_nim/moonshot/kimi-k3"                            # Nvidia NIM — Kimi-K3 2.8T
+    PRO_FALLBACK_2 = "cloudflare/@cf/meta/llama-3.3-70b-instruct-fp8-fast"    # Cloudflare — Llama 3.3 70B
 
     # Fast models for tagging and basic tasks (Gemini free tier)
     FLASH = "gemini/gemini-3.5-flash-lite"
@@ -30,8 +29,7 @@ class Settings(BaseSettings):
     telegram_chat_id: str = ""
     residential_proxy_url: str = ""
 
-    # The 4-Titan Sovereign Matrix Keys
-    siliconflow_api_key: str = ""
+    # The 3-Titan Sovereign Matrix Keys
     nvidia_api_key: str = ""
     cloudflare_api_key: str = ""
     cloudflare_account_id: str = ""
