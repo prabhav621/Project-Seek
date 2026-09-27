@@ -1,4 +1,4 @@
-﻿from src.utils.retry import generate_content_with_retry
+from src.utils.retry import generate_content_with_retry
 import os
 import logging
 from typing import Optional, List
@@ -24,14 +24,24 @@ class MediaTranscriber:
     def _transcribe_with_gemini(self, file_path: str) -> str:
         gemini_file = self.gemini_client.files.upload(file=file_path)
         try:
-            prompt = "Please provide a highly accurate transcription of the audio in this file. Output ONLY the transcript without any extra commentary or formatting. IMPORTANT: If the audio is spoken in a non-English language (such as Hindi), you MUST translate the transcript directly into English."
+            prompt = (
+                "Please provide a highly accurate transcription of the audio in this file.\n"
+                "IMPORTANT RULES:\n"
+                "1. If the audio contains NO human speech (e.g. it is just silence, background music, or sound effects), you MUST return EXACTLY the string '[NO_SPEECH]'. Do NOT hallucinate random text.\n"
+                "2. Output ONLY the transcript without any extra commentary or formatting.\n"
+                "3. If the audio is spoken in a non-English language, translate the transcript directly into English."
+            )
             from src.config import ModelTier
             raw_model = ModelTier.FLASH.value.replace("gemini/", "")
             response = generate_content_with_retry(self.gemini_client, 
                 model=raw_model,
                 contents=[gemini_file, prompt]
             )
-            return response.text.strip()
+            
+            result = response.text.strip()
+            if "[NO_SPEECH]" in result:
+                return ""
+            return result
         finally:
             try:
                 self.gemini_client.files.delete(name=gemini_file.name)
@@ -47,7 +57,9 @@ class MediaTranscriber:
             logger.info("Loading faster-whisper model...")
             self.whisper_model = WhisperModel("base", device="cpu", compute_type="int8")
         logger.info(f"Transcribing {file_path} with faster-whisper...")
-        segments, info = self.whisper_model.transcribe(file_path, beam_size=5)
+        
+        # vad_filter=True strips silence/music before transcription, killing hallucinations
+        segments, info = self.whisper_model.transcribe(file_path, beam_size=5, vad_filter=True)
         transcript = " ".join([segment.text.strip() for segment in segments])
         return transcript.strip()
 
