@@ -29,7 +29,14 @@ def get_limiter_for_model_string(model_name: str):
 
 class DummyResponse:
     def __init__(self, text):
-        self.text = text
+        clean_text = text.strip()
+        if clean_text.startswith("```json"):
+            clean_text = clean_text[7:]
+        elif clean_text.startswith("```"):
+            clean_text = clean_text[3:]
+        if clean_text.endswith("```"):
+            clean_text = clean_text[:-3]
+        self.text = clean_text.strip()
 
 
 class DummyEmbedding:
