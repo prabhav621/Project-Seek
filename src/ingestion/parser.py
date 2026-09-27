@@ -87,9 +87,8 @@ class UniversalLinkParser:
         item = ContentItem(
             source_url=url,
             source_type=source_type.value,
-            raw_content=raw_text,
+            raw_text=raw_text,
             embedding=embedding,
-            domain_tags=domain_tags,
             ingestion_mode=ingestion_mode
         )
         self.db.add(item)
