@@ -62,7 +62,28 @@ async def send_forge():
 
         bot = Bot(token=bot_token)
         print("Sending message via Telegram...")
-        await bot.send_message(chat_id=chat_id, text=formatted_message)
+        
+        # Telegram max length is 4096. Split safely at newlines.
+        MAX_LEN = 4000
+        parts = []
+        remaining = formatted_message
+        
+        while len(remaining) > 0:
+            if len(remaining) <= MAX_LEN:
+                parts.append(remaining)
+                break
+            
+            split_at = remaining.rfind('\n', 0, MAX_LEN)
+            if split_at == -1:
+                split_at = MAX_LEN
+                
+            parts.append(remaining[:split_at])
+            remaining = remaining[split_at:].lstrip()
+
+        for part in parts:
+            await bot.send_message(chat_id=chat_id, text=part)
+            await asyncio.sleep(0.5)
+            
         print("Done.")
 
     except Exception as e:
