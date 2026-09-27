@@ -21,7 +21,8 @@ def generate_inversion_prompt(domain: str) -> InversionResponse:
     
     Example: "You instinctively build backend-first. What if you built the marketing site before writing a single line of backend code? What would you learn?"
     
-    Output strictly as structured JSON matching the requested schema.
+    Output strictly as a single, flat JSON object exactly matching this schema:
+    {InversionResponse.model_json_schema()}
     """
     response = generate_content_with_retry(client, 
         model=model_name,

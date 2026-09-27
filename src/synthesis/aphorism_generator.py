@@ -22,7 +22,8 @@ def generate_aphorism(domain: str) -> AphorismResponse:
     Provide a profound quote from ancient philosophy (Greek, Roman, Indian, etc.).
     Then, contextualize it specifically for modern tech, business, and startups, aligning with the domain '{domain}'.
     
-    Output strictly as structured JSON matching the requested schema.
+    Output strictly as a single, flat JSON object exactly matching this schema:
+    {AphorismResponse.model_json_schema()}
     """
     response = generate_content_with_retry(client, 
         model=model_name,

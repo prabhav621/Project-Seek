@@ -21,7 +21,7 @@ def generate_suggestion_hook(title: str, domain: str) -> SuggestionHookResponse:
     
     Example: "↳ Why this: Matches your interests in growth engineering + investing + Indian tech."
     
-    Output strictly as structured JSON matching the requested schema.
+    Output strictly as a single, flat JSON object exactly matching this schema:\n    {SuggestionHookResponse.model_json_schema()}
     """
     response = generate_content_with_retry(client, 
         model=model_name,

@@ -36,7 +36,8 @@ def generate_deep_kata(raw_content: str, domain: str) -> DeepKataResponse:
     Content:
     {raw_content}
     
-    Output strictly as structured JSON matching the requested schema.
+    Output strictly as a single, flat JSON object exactly matching this schema:
+    {DeepKataResponse.model_json_schema()}
     """
     from src.utils.retry import generate_content_with_retry
     response = generate_content_with_retry(
@@ -68,7 +69,8 @@ def generate_quick_kata(raw_content: str, domain: str) -> QuickKataResponse:
     Content:
     {raw_content}
     
-    Output strictly as structured JSON matching the requested schema.
+    Output strictly as a single, flat JSON object exactly matching this schema:
+    {QuickKataResponse.model_json_schema()}
     """
     from src.utils.retry import generate_content_with_retry
     response = generate_content_with_retry(
