@@ -69,39 +69,43 @@ async def build_and_send_forge():
         try:
             # 1. Deep Kata
             dk_item = items[0]
+            dk_domain = top_interests[0].domain if top_interests else "Technology"
             print(f"Generating Deep Kata...")
-            dk = generate_deep_kata(dk_item.raw_text[:3000], "Curated Topic")
+            dk = generate_deep_kata(dk_item.raw_text[:3000], dk_domain)
             db.add(DailyItem(
                 content_id=dk_item.id, item_type='deep_kata',
                 title=dk.title, context=dk.context, crisis=dk.crisis,
                 architecture=dk.architecture, kata_question=dk.kata_question,
-                mirror_question=dk.mirror_question, domains=["Curated Topic"]
+                mirror_question=dk.mirror_question, domains=[dk_domain]
             ))
 
             # 2. Quick Katas
-            for qk_item in items[1:3]:
+            for i, qk_item in enumerate(items[1:3]):
                 print(f"Generating Quick Kata...")
-                qk = generate_quick_kata(qk_item.raw_text[:3000], "Curated Topic")
+                qk_domain = top_interests[i].domain if len(top_interests) > i else dk_domain
+                qk = generate_quick_kata(qk_item.raw_text[:3000], qk_domain)
                 db.add(DailyItem(
                     content_id=qk_item.id, item_type='quick_kata',
                     title=qk.title, context=qk.context, kata_question=qk.kata_question,
-                    domains=["Curated Topic"]
+                    domains=[qk_domain]
                 ))
 
             # 3. Aphorism
             aph_item = items[3] if len(items) > 3 else items[0]
+            aph_domain = top_interests[-1].domain if top_interests else "Startups"
             print("Generating Aphorism...")
-            aph = generate_aphorism(aph_item.raw_text[:3000])
+            aph = generate_aphorism(aph_domain)
             db.add(DailyItem(
                 content_id=aph_item.id, item_type='aphorism',
-                quote_text=aph.quote_text, quote_author=aph.author,
-                quote_context=aph.philosophical_context
+                quote_text=aph.quote_text, quote_author=aph.quote_author,
+                quote_context=aph.quote_context
             ))
 
             # 4. Inversion
             inv_item = items[4] if len(items) > 4 else items[0]
+            inv_domain = top_interests[0].domain if top_interests else "Product Development"
             print("Generating Inversion...")
-            inv = generate_inversion_prompt(inv_item.raw_text[:3000])
+            inv = generate_inversion_prompt(inv_domain)
             db.add(DailyItem(
                 content_id=inv_item.id, item_type='inversion_prompt',
                 inversion_prompt=inv.inversion_prompt
