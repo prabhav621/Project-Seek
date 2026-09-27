@@ -323,8 +323,8 @@ def _update_drift_sync(item_id: str, engagement_type: str, reply_analysis: dict 
 
 async def handle_forge(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text("🔨 Forging your daily digest... This might take 30-60 seconds.")
-    from src.jobs.daily_forge import send_forge
-    asyncio.create_task(send_forge())
+    from src.jobs.forge_builder import build_and_send_forge
+    asyncio.create_task(build_and_send_forge())
 
 
 async def post_init(application: Application):
