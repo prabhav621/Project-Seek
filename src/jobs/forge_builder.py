@@ -16,15 +16,55 @@ from src.synthesis.inversion_generator import generate_inversion_prompt
 async def build_and_send_forge():
     print("🔨 Building the Daily Forge...")
     async with SessionLocal() as db:
-        # Find 5 recent unprocessed items
-        items = (await db.execute(select(ContentItem).filter(ContentItem.processed == False).order_by(ContentItem.ingested_at.desc()).limit(5))).scalars().all()
+        # --- ALGORITHMIC VECTOR PICKER ---
+        print("🧠 Curating Forge using Vector Similarity...")
         
+        # 1. Get user's top 3 interests by weight
+        top_interests = (await db.execute(
+            select(InterestVector).order_by(InterestVector.weight.desc()).limit(3)
+        )).scalars().all()
+
+        items = []
+        if top_interests:
+            seen_ids = set()
+            allocations = [2, 2, 1] # Diversity split: 2 items for Top Interest, 2 for #2, 1 for #3
+            
+            for i, interest in enumerate(top_interests):
+                limit = allocations[i] if i < len(allocations) else 1
+                
+                # Filter out items already selected in this loop
+                base_query = select(ContentItem).filter(ContentItem.processed == False)
+                if seen_ids:
+                    base_query = base_query.filter(~ContentItem.id.in_(seen_ids))
+                    
+                # Use pgvector cosine distance to find the mathematically closest items
+                stmt = base_query.order_by(ContentItem.embedding.cosine_distance(interest.embedding)).limit(limit)
+                
+                matched_items = (await db.execute(stmt)).scalars().all()
+                for item in matched_items:
+                    items.append(item)
+                    seen_ids.add(item.id)
+                    
+            # If we didn't find 5 items (small backlog), fill the rest chronologically
+            if len(items) < 5:
+                needed = 5 - len(items)
+                base_query = select(ContentItem).filter(ContentItem.processed == False)
+                if seen_ids:
+                    base_query = base_query.filter(~ContentItem.id.in_(seen_ids))
+                
+                fill_items = (await db.execute(base_query.order_by(ContentItem.ingested_at.desc()).limit(needed))).scalars().all()
+                items.extend(fill_items)
+        else:
+            # Fallback if no interests exist yet
+            items = (await db.execute(select(ContentItem).filter(ContentItem.processed == False).order_by(ContentItem.ingested_at.desc()).limit(5))).scalars().all()
+
         if not items:
             print("No unprocessed content items found, grabbing latest 5.")
             items = (await db.execute(select(ContentItem).order_by(ContentItem.ingested_at.desc()).limit(5))).scalars().all()
             if not items:
                 print("No content at all in DB.")
                 return
+        # ---------------------------------
 
         try:
             # 1. Deep Kata
