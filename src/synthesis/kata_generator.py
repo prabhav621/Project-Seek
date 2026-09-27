@@ -27,7 +27,11 @@ def generate_deep_kata(raw_content: str, domain: str) -> DeepKataResponse:
     prompt = f"""
     You are an expert AI shaping a "Deep Kata" for a tech founder.
     Based on the following content and domain '{domain}', generate a Deep Kata.
-    A Deep Kata is a challenging hypothetical scenario based on real-world engineering, growth, or product crises.
+    
+    CRITICAL INSTRUCTION:
+    Frame the scenario entirely as a compelling, high-stakes real-world case study (e.g., "A Series B fintech company is bleeding cash because..."). 
+    Disguise the core lesson of the content inside this case study. Do NOT refer to the original author, tweet, video, or content directly. Act as if you are presenting a Harvard Business School case to the founder.
+    The Deep Kata must have a scenario, crisis, architecture constraints, and a question.
     
     Content:
     {raw_content}
@@ -56,7 +60,10 @@ def generate_quick_kata(raw_content: str, domain: str) -> QuickKataResponse:
     prompt = f"""
     You are an expert AI shaping a "Quick Kata" for a tech founder.
     Based on the following content and domain '{domain}', generate a Quick Kata.
-    A Quick Kata is a short, maximum 2-sentence constraint challenge based on real-world situations.
+    
+    CRITICAL INSTRUCTION: 
+    Frame the challenge entirely as a real-world case study. Disguise the core lesson inside a scenario (e.g., "A bootstrapped startup just lost its API provider..."). Do NOT reference the source content directly.
+    A Quick Kata is a short, maximum 2-sentence constraint challenge based on this case study.
     
     Content:
     {raw_content}
