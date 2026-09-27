@@ -23,7 +23,7 @@ def generate_deep_kata(raw_content: str, domain: str) -> DeepKataResponse:
     Generates a Deep Kata (configured via ModelTier in config.py) based on raw content and a target domain.
     Deep katas need a scenario, crisis, architecture, and question.
     """
-    model_name = settings.get_model_for_task(TaskType.DEEP_KATA).value
+    model_name = settings.get_model_for_task(TaskType.DEEP_KATA)
     prompt = f"""
     You are an expert AI shaping a "Deep Kata" for a tech founder.
     Based on the following content and domain '{domain}', generate a Deep Kata.
@@ -52,7 +52,7 @@ def generate_quick_kata(raw_content: str, domain: str) -> QuickKataResponse:
     Generates a Quick Kata (configured via ModelTier in config.py) based on raw content and a target domain.
     Quick katas are shorter 2-sentence constraints.
     """
-    model_name = settings.get_model_for_task(TaskType.QUICK_KATA).value
+    model_name = settings.get_model_for_task(TaskType.QUICK_KATA)
     prompt = f"""
     You are an expert AI shaping a "Quick Kata" for a tech founder.
     Based on the following content and domain '{domain}', generate a Quick Kata.

@@ -47,7 +47,7 @@ class DomainTagger:
         """
         prompt = f"Extract the core domain or theme of the following text in exactly 2 to 3 words. Return ONLY the 2-3 words, lowercase, spaces replaced with underscores (e.g., 'quantum_computing', 'longevity_research').\n\nText:\n{raw_text[:3000]}"
         response = await generate_content_async_with_retry(self.client, 
-            model=settings.get_model_for_task(TaskType.TAGGING).value,
+            model=settings.get_model_for_task(TaskType.TAGGING),
             contents=prompt
         )
         new_domain = response.text.strip().lower().replace(" ", "_")

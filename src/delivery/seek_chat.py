@@ -31,7 +31,7 @@ class SeekChat:
         self.max_turns = 10
         self.is_finished = False
         
-        self.model = settings.get_model_for_task(TaskType.SEEK_CHAT).value
+        self.model = settings.get_model_for_task(TaskType.SEEK_CHAT)
         
         # Build system instruction
         context_text = (

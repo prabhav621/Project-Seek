@@ -13,7 +13,7 @@ def generate_inversion_prompt(domain: str) -> InversionResponse:
     """
     Generates 'Devil's Advocate' prompts challenging the Founder's comfort zones (configured via ModelTier in config.py).
     """
-    model_name = settings.get_model_for_task(TaskType.INVERSION_PROMPT).value
+    model_name = settings.get_model_for_task(TaskType.INVERSION_PROMPT)
     prompt = f"""
     You are an expert AI shaping a "Devil's Advocate" or Inversion prompt for a solo tech founder.
     The goal is to challenge their comfort zones and force them to think in reverse about the domain '{domain}'.

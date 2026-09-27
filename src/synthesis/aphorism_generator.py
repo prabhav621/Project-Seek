@@ -16,7 +16,7 @@ def generate_aphorism(domain: str) -> AphorismResponse:
     """
     Selects and contextualizes an ancient philosophy quote for modern tech/business (configured via ModelTier in config.py).
     """
-    model_name = settings.get_model_for_task(TaskType.APHORISM).value
+    model_name = settings.get_model_for_task(TaskType.APHORISM)
     prompt = f"""
     You are an expert AI shaping an "Aphorism" for a tech founder.
     Provide a profound quote from ancient philosophy (Greek, Roman, Indian, etc.).
@@ -39,7 +39,7 @@ def contextualize_aphorism(quote_text: str, quote_author: str, domain: str) -> A
     """
     Contextualizes a pre-selected ancient philosophy quote for modern tech/business.
     """
-    model_name = settings.get_model_for_task(TaskType.APHORISM).value
+    model_name = settings.get_model_for_task(TaskType.APHORISM)
     prompt = f"""
     You are an expert AI shaping an "Aphorism" for a tech founder.
     Given the following quote, contextualize it specifically for modern tech, business, and startups, aligning with the domain '{domain}'.

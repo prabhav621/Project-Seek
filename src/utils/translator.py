@@ -8,7 +8,7 @@ logger = logging.getLogger(__name__)
 class UniversalTranslator:
     def __init__(self):
         self.client = genai.Client(api_key=settings.gemini_api_key)
-        self.model = settings.get_model_for_task(TaskType.TAGGING).value # Flash-Lite is perfect for fast translation
+        self.model = settings.get_model_for_task(TaskType.TAGGING) # Flash-Lite is perfect for fast translation
 
     async def force_english(self, text: str) -> str:
         if not text or len(text.strip()) == 0:

@@ -13,7 +13,7 @@ def generate_suggestion_hook(title: str, domain: str) -> SuggestionHookResponse:
     """
     Generates a short 2-line "why this" hook for a curated link (configured via ModelTier in config.py).
     """
-    model_name = settings.get_model_for_task(TaskType.SUGGESTION_HOOKS).value
+    model_name = settings.get_model_for_task(TaskType.SUGGESTION_HOOKS)
     prompt = f"""
     You are an expert AI curating a reading/watch list for a tech founder.
     Write a short 2-line "why this" hook for the following content title: "{title}".

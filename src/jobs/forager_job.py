@@ -35,7 +35,7 @@ async def run_forager():
         # Ask Gemini to generate search queries
         prompt = f"Generate 2 highly specific, intellectual Google search queries to find insightful articles or essays about: {', '.join(domains)}. Return just the 2 queries separated by newlines."
         response = await generate_content_async_with_retry(client, 
-            model=settings.get_model_for_task(TaskType.TAGGING).value,
+            model=settings.get_model_for_task(TaskType.TAGGING),
             contents=prompt
         )
         
