@@ -101,7 +101,7 @@ def curate_daily_forge(db: Session, target_date: date) -> dict:
         # Try to find an inversion prompt specifically for this domain
         inversion = candidates_query.filter(
             DailyItem.item_type == 'inversion_prompt',
-            top_domain_row.domain == func.any(DailyItem.domains)
+            DailyItem.domains.any(top_domain_row.domain)
         ).order_by(score_expr.desc()).first()
         
     if not inversion:
