@@ -23,6 +23,7 @@ def _run_forge_sync(target_date: date) -> dict:
     relies on synchronous SQLAlchemy ORM patterns (db.query, db.commit).
     """
     db = SyncSessionLocal()
+    db.expire_on_commit = False
     try:
         portfolio = curate_daily_forge(db, target_date)
         return portfolio
