@@ -5,13 +5,14 @@ from pathlib import Path
 from datetime import datetime, date
 from telegram import Bot
 
-# Add src to path
-src_path = Path(__file__).parent.parent
-sys.path.append(str(src_path))
+# Add project root to path
+root_path = Path(__file__).resolve().parent.parent.parent
+if str(root_path) not in sys.path:
+    sys.path.append(str(root_path))
 
-from db.session import SyncSessionLocal
-from intelligence.curator import curate_daily_forge
-from delivery.formatter import format_daily_forge
+from src.db.session import SyncSessionLocal
+from src.intelligence.curator import curate_daily_forge
+from src.delivery.formatter import format_daily_forge
 from src.config import settings
 
 
