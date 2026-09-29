@@ -295,12 +295,14 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
             latest_item.engagement = engagement
             latest_item.founder_response = reply_text
             latest_item.reply_analysis = analysis_dict
+
+            # Serialize before commit to prevent SQLAlchemy expiration
+            context_item = DailyItemResponse.model_validate(latest_item)
             await db.commit()
 
             if analysis.new_question_asked:
                 top_domains_objs = (await db.execute(select(InterestVector).order_by(InterestVector.weight.desc()).limit(5))).scalars().all()
                 top_domains = [td.domain for td in top_domains_objs]
-                context_item = DailyItemResponse.model_validate(latest_item)
 
                 chat = SeekChat(context_item=context_item, top_domains=top_domains)
                 response_text = await asyncio.to_thread(chat.send_message, reply_text)

@@ -31,6 +31,8 @@ def format_daily_forge(items: List[DailyItem], date: datetime = None) -> str:
 
     if deep_kata:
         forge_parts.append(f"🧠 DEEP KATA — \"{deep_kata.title}\"")
+        if deep_kata.suggestion_url:
+            forge_parts.append(f"🔗 Source: {deep_kata.suggestion_url}")
         if deep_kata.context:
             forge_parts.append(f"📍 {deep_kata.context}")
         if deep_kata.crisis:
@@ -43,6 +45,8 @@ def format_daily_forge(items: List[DailyItem], date: datetime = None) -> str:
 
     for idx, quick_kata in enumerate(quick_katas, start=1):
         forge_parts.append(f"⚡ QUICK KATA #{idx} — \"{quick_kata.title}\"")
+        if quick_kata.suggestion_url:
+            forge_parts.append(f"🔗 Source: {quick_kata.suggestion_url}")
         if quick_kata.context:
             forge_parts.append(f"{quick_kata.context}")
         if quick_kata.kata_question:

@@ -74,9 +74,11 @@ async def build_and_send_forge():
             dk = generate_deep_kata(dk_item.raw_text[:3000], dk_domain)
             db.add(DailyItem(
                 content_id=dk_item.id, item_type='deep_kata',
+                embedding=dk_item.embedding,
                 title=dk.title, context=dk.context, crisis=dk.crisis,
                 architecture=dk.architecture, kata_question=dk.kata_question,
-                mirror_question=dk.mirror_question, domains=[dk_domain]
+                mirror_question=dk.mirror_question, domains=[dk_domain],
+                suggestion_url=dk_item.source_url
             ))
 
             # 2. Quick Katas
@@ -86,8 +88,10 @@ async def build_and_send_forge():
                 qk = generate_quick_kata(qk_item.raw_text[:3000], qk_domain)
                 db.add(DailyItem(
                     content_id=qk_item.id, item_type='quick_kata',
+                    embedding=qk_item.embedding,
                     title=qk.title, context=qk.context, kata_question=qk.kata_question,
-                    domains=[qk_domain]
+                    domains=[qk_domain],
+                    suggestion_url=qk_item.source_url
                 ))
 
             # 3. Aphorism
@@ -97,6 +101,7 @@ async def build_and_send_forge():
             aph = generate_aphorism(aph_domain)
             db.add(DailyItem(
                 content_id=aph_item.id, item_type='aphorism',
+                embedding=aph_item.embedding,
                 quote_text=aph.quote_text, quote_author=aph.quote_author,
                 quote_context=aph.quote_context
             ))
@@ -108,6 +113,7 @@ async def build_and_send_forge():
             inv = generate_inversion_prompt(inv_domain)
             db.add(DailyItem(
                 content_id=inv_item.id, item_type='inversion_prompt',
+                embedding=inv_item.embedding,
                 inversion_prompt=inv.inversion_prompt
             ))
 
