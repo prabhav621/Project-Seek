@@ -5,10 +5,10 @@ from enum import Enum
 class ModelTier(str, Enum):
     # STATIC ANCHORS FOR THE 5-SLOT MATRIX
     PRO_PRIMARY = "nvidia_nim/nvidia/nemotron-3-ultra-550b-a55b"             # Slot 1: Nvidia 550B
-    PRO_SAFETY_NET = "cloudflare/@cf/meta/llama-3.3-70b-instruct-fp8-fast"    # Slot 5: Cloudflare 70B
+    PRO_SAFETY_NET = "cloudflare/@cf/meta/llama-3-8b-instruct"             # Slot 5: Cloudflare 8B
     
     # Fast models for tagging and basic tasks (Gemini free tier)
-    FLASH = "gemini/gemini-3.5-flash-lite"
+    FLASH = "gemini/gemini-3.5-flash"
     FLASH_LITE = "gemini/gemini-3.5-flash-lite"
 
 class TaskType(str, Enum):

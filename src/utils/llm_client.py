@@ -33,6 +33,11 @@ def _apply_provider_kwargs(kwargs, target_model):
     # OPENROUTER
     elif "openrouter" in target_model:
         kwargs["api_key"] = settings.openrouter_api_key
+        # Highly recommended to prevent unannounced blocking
+        kwargs["extra_headers"] = {
+            "HTTP-Referer": "https://github.com/prabhav621/Project-Seek",
+            "X-Title": "Project Seek"
+        }
         
     # CLOUDFLARE
     elif "cloudflare" in target_model:
@@ -58,7 +63,12 @@ def _get_cascade_sequence(target_model):
             
         # Slot 5: Static Safety Net
         sequence.append(
-            (ModelTier.PRO_SAFETY_NET.value, 15, "Cloudflare (Llama 3.3 70B)")
+            (ModelTier.PRO_SAFETY_NET.value, 15, "Cloudflare (Llama 3 8B)")
+        )
+        
+        # Slot 6: Doomsday Fallback
+        sequence.append(
+            (ModelTier.FLASH.value, 15, "Gemini Flash (Doomsday Fallback)")
         )
         return sequence
         
@@ -112,7 +122,7 @@ def generate_completion_sync(model: str, messages: list = None, **kwargs) -> str
             logger.warning(f"{name} failed: {e}")
             continue
 
-    error_msg = "FATAL ERROR: All 5 cascade slots exhausted."
+    error_msg = "FATAL ERROR: All cascade slots exhausted."
     print(f"❌ {error_msg}")
     raise RuntimeError(error_msg)
 
@@ -156,7 +166,7 @@ async def generate_completion_async(model: str, messages: list = None, **kwargs)
             logger.warning(f"Async {name} failed: {e}")
             continue
 
-    raise RuntimeError("Async FATAL ERROR: All 5 cascade slots exhausted.")
+    raise RuntimeError("Async FATAL ERROR: All cascade slots exhausted.")
 
 
 def generate_chat_sync(model: str, messages: list, system_instruction: str = None, temperature: float = 0.7) -> str:

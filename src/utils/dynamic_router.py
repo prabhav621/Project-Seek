@@ -60,10 +60,10 @@ def get_top_free_models(limit=3):
         
         if not _cached_models:
             # Absolute fallback if regex fails
-            _cached_models = [{"id": "meta-llama/llama-3.1-70b-instruct:free", "name": "Llama 3.1 70B", "params": 70}]
+            _cached_models = [{"id": "nvidia/nemotron-3-super-120b-a12b:free", "name": "Nemotron Super 120B", "params": 120}]
             
         return _cached_models
 
     except Exception as e:
         logger.warning(f"Dynamic Router Error: {e}")
-        return [{"id": "meta-llama/llama-3.1-70b-instruct:free", "name": "Llama 3.1 70B (Static Fallback)", "params": 70}]
+        return [{"id": "nvidia/nemotron-3-super-120b-a12b:free", "name": "Nemotron Super 120B (Static Fallback)", "params": 120}]
