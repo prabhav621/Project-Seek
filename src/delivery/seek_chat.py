@@ -33,26 +33,30 @@ class SeekChat:
         
         self.model = settings.get_model_for_task(TaskType.SEEK_CHAT)
         
-        # Build system instruction
-        context_text = (
-            self.context_item.context or 
-            self.context_item.kata_question or 
-            self.context_item.title or 
-            "No context provided."
-        )
-        
-        self.system_instruction = (
-            "You are Seek, an autonomous intelligence engine engaging the Founder in a Socratic dialogue. "
-            "Your goal is not just to provide answers, but to ask probing, multi-directional questions "
-            "that push the Founder to synthesize knowledge and uncover blind spots.\n\n"
-            f"Context (Daily Item): {context_text}\n\n"
-            f"Founder's Top 5 Interest Domains: {', '.join(self.top_domains)}\n\n"
-            "Guidelines:\n"
-            "- Incorporate the Founder's interest domains into analogies where appropriate.\n"
-            "- Keep responses concise and focused.\n"
-            "- End your responses with a challenging question.\n"
-            "- Do not be overly sycophantic. Challenge assumptions."
-        )
+        # Intelligently construct the context based on the item type
+        if self.context_item.item_type in ['deep_kata', 'quick_kata']:
+            prompt_context = f"Kata Context: {self.context_item.context}\nKata Question Asked: {self.context_item.kata_question}"
+        elif self.context_item.item_type == 'aphorism':
+            prompt_context = f"Quote: '{self.context_item.quote_text}' - {self.context_item.quote_author}\nMirror Question Asked: {self.context_item.mirror_question}"
+        elif self.context_item.item_type == 'inversion':
+            prompt_context = f"Inversion Exercise: {self.context_item.inversion_prompt}"
+        else:
+            prompt_context = f"Context: {self.context_item.context}"
+            
+        self.system_instruction = f"""You are Seek, an elite autonomous intelligence engine acting as a sparring partner for the Founder.
+We are currently in a Kata-style Q&A session. I generated a deep intellectual challenge for the Founder, and they just provided their answer.
+
+[THE CHALLENGE THEY ARE ANSWERING]
+{prompt_context}
+
+[FOUNDER'S DOMAINS OF MASTERY]
+{', '.join(self.top_domains)}
+
+[YOUR DIRECTIVE]
+1. Evaluate their answer against the original challenge. Did they grasp the nuance?
+2. DO NOT just say "Great answer!" - Act like a rigorous Socratic mentor. Challenge their assumptions, point out logical leaps, and demand deeper synthesis.
+3. Use their Domains of Mastery to form analogies that resonate with them.
+4. End your response with exactly ONE piercing follow-up question that forces them to defend or expand their stance. Keep your response sharp, concise, and highly intelligent."""
         
         # Manual history management for multi-turn chat via LiteLLM
         self.message_history = []
