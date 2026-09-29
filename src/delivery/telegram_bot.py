@@ -336,8 +336,8 @@ async def post_init(application: Application):
     scheduler = AsyncIOScheduler(timezone=pytz.timezone('Asia/Kolkata'))
 
     async def scheduled_forge():
-        from src.jobs.daily_forge import send_forge
-        await send_forge()
+        from src.jobs.forge_builder import build_and_send_forge
+        await build_and_send_forge()
 
     scheduler.add_job(scheduled_forge, 'cron', hour=8, minute=0)
     scheduler.start()

@@ -43,7 +43,7 @@ class ReplyAnalyzer:
         system_instruction = (
             "You are an expert AI behavioral analyst. "
             "Your task is to analyze a user's reply to an AI-generated personalized digest (the 'Daily Forge'). "
-            "Extract a structured JSON profile containing the exact schema defined."
+            f"Output strictly as a single, flat JSON object exactly matching this schema:\n{ReplyAnalysisResult.model_json_schema()}"
         )
         
         prompt = (
