@@ -347,6 +347,27 @@ async def post_init(application: Application):
 
 
 
+async def handle_end(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    chat = context.user_data.get('seek_chat')
+    if not chat or chat.is_finished:
+        await update.message.reply_text("No active Seek Chat session to end.")
+        return
+        
+    await update.message.reply_text("Closing session and analyzing conversation...")
+    chat.is_finished = True
+    
+    summary = await asyncio.to_thread(chat.summarize_conversation)
+    
+    async with SessionLocal() as db:
+        for topic in summary.domain_shifts:
+            matched_domain = (await db.execute(select(InterestVector).filter(InterestVector.domain == topic))).scalars().first()
+            if matched_domain:
+                matched_domain.weight = min(1.0, matched_domain.weight + 0.05)
+        await db.commit()
+        
+    context.user_data['seek_chat'] = None
+    await update.message.reply_text(f"[Seek Chat Concluded early]\nSummary: {summary.summary}")
+
 def main():
     token = settings.telegram_bot_token
     if not token:
@@ -366,6 +387,7 @@ def main():
     application.add_handler(MessageHandler(filters.TEXT & ~url_filter & ~filters.COMMAND, handle_text))
     application.add_handler(MessageReactionHandler(handle_reaction))
     application.add_handler(CommandHandler("forge", handle_forge))
+    application.add_handler(CommandHandler("end", handle_end))
 
     application.post_init = post_init
 
