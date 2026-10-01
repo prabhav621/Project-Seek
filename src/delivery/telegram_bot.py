@@ -269,10 +269,38 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
         reply_text = message.text
 
         async with SessionLocal() as db:
-            latest_item = (await db.execute(select(DailyItem).order_by(DailyItem.created_at.desc()))).scalars().first()
-            if not latest_item:
+            # Fetch the most recent item to establish the batch time window
+            newest = (await db.execute(select(DailyItem).order_by(DailyItem.created_at.desc()))).scalars().first()
+            if not newest:
                 await message.reply_text("No Daily Forge found to associate this reply with.")
                 return
+                
+            # Fetch all items created within 10 minutes of the newest item (the whole digest)
+            from datetime import timedelta
+            batch_start = newest.created_at - timedelta(minutes=10)
+            
+            batch_items_query = await db.execute(
+                select(DailyItem)
+                .filter(DailyItem.created_at >= batch_start)
+                .order_by(DailyItem.created_at.desc())
+            )
+            batch_items = batch_items_query.scalars().all()
+            
+            latest_item = newest
+            if len(batch_items) > 1:
+                # Use the router agent to figure out which item they are replying to
+                from src.intelligence.router_agent import route_reply_sync
+                from src.models import DailyItemResponse
+                
+                # Convert to dicts for the router
+                candidate_dicts = [DailyItemResponse.model_validate(item).model_dump() for item in batch_items]
+                matched_id = await asyncio.to_thread(route_reply_sync, reply_text, candidate_dicts)
+                
+                # Find the matched item in the DB list
+                for item in batch_items:
+                    if str(item.id) == matched_id:
+                        latest_item = item
+                        break
 
             analyzer = ReplyAnalyzer()
             try:
