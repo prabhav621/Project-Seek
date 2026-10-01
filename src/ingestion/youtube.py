@@ -130,9 +130,18 @@ def extract_subtitles(url: str) -> str:
             e2 = exc2
             logger.warning(f'yt-dlp failed for {video_id} (Attempt {attempt+1}/2): {str(exc2)[:100]}')
 
+    e3 = None
+    try:
+        logger.info(f'Falling back to Gemini 3.5 Flash-Lite native audio transcription for {video_id}...')
+        return _extract_via_audio_fallback(video_id)
+    except Exception as exc3:
+        e3 = exc3
+        logger.warning(f'Audio fallback failed for {video_id}: {str(exc3)[:100]}')
+
     msg1 = str(e1)[:100] if e1 else 'None'
     msg2 = str(e2)[:100] if e2 else 'None'
+    msg3 = str(e3)[:100] if e3 else 'None'
     raise ValueError(
         f'Failed to fetch transcript for {video_id}. '
-        f'Transcript-API: {msg1} | yt-dlp: {msg2}'
+        f'Transcript-API: {msg1} | yt-dlp: {msg2} | Audio: {msg3}'
     )
