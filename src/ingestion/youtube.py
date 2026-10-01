@@ -58,6 +58,60 @@ def _extract_via_transcript_api(video_id: str) -> str:
 
 # ─── Fallback: yt-dlp subtitle extraction ────────────────────────────
 
+
+def _extract_via_audio_fallback(video_id: str) -> str:
+    import subprocess
+    import tempfile
+    import os
+    from google import genai
+    from src.config import settings, ModelTier
+    from src.utils.retry import generate_content_with_retry
+    
+    with tempfile.TemporaryDirectory() as tmpdir:
+        output_template = os.path.join(tmpdir, "%(id)s.%(ext)s")
+        cmd = [
+            "yt-dlp",
+            "-f", "bestaudio[ext=m4a]/bestaudio",
+            "-o", output_template,
+            f"https://www.youtube.com/watch?v={video_id}"
+        ]
+        subprocess.run(cmd, check=True, capture_output=True)
+        
+        audio_file = None
+        for f in os.listdir(tmpdir):
+            if f.startswith(video_id):
+                audio_file = os.path.join(tmpdir, f)
+                break
+                
+        if not audio_file:
+            raise Exception("yt-dlp did not produce an audio file")
+            
+        client = genai.Client(api_key=settings.gemini_api_key)
+        logger.info(f"Uploading {audio_file} to Gemini for native transcription...")
+        gemini_file = client.files.upload(file=audio_file)
+        
+        try:
+            prompt = (
+                "Please provide a highly accurate transcription of the audio in this file.\n"
+                "Do not summarize. Just provide the raw text of what is spoken.\n"
+                "If the audio is not in English, translate the transcript into English."
+            )
+            raw_model = ModelTier.FLASH_LITE.value.replace("gemini/", "")
+            
+            logger.info(f"Generating transcript with Gemini 3.5 Flash-Lite...")
+            response = generate_content_with_retry(
+                client=client,
+                model=raw_model,
+                contents=[gemini_file, prompt]
+            )
+            return response.text
+        finally:
+            try:
+                client.files.delete(name=gemini_file.name)
+            except Exception as e:
+                logger.warning(f"Failed to delete Gemini file {gemini_file.name}: {e}")
+
+
 def _extract_via_ytdlp(video_id: str) -> str:
     import yt_dlp
 
