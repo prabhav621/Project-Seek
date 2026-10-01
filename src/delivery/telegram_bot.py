@@ -396,6 +396,43 @@ async def handle_end(update: Update, context: ContextTypes.DEFAULT_TYPE):
     context.user_data['seek_chat'] = None
     await update.message.reply_text(f"[Seek Chat Concluded early]\nSummary: {summary.summary}")
 
+
+async def handle_document(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """
+    Message handler that intercepts documents (PDF, Markdown, TXT),
+    downloads them, and extracts their text natively via Gemini.
+    """
+    document = update.message.document
+    if not document:
+        return
+        
+    file_id = document.file_id
+    file_name = document.file_name or f"document_{file_id}"
+    mime_type = document.mime_type
+    
+    await update.message.reply_text(f"📥 Received document: {file_name}. Downloading and extracting text via Gemini...")
+    
+    try:
+        telegram_file = await context.bot.get_file(file_id)
+        
+        import tempfile
+        import os
+        from src.ingestion.parser import UniversalLinkParser
+        from src.db.session import SessionLocal
+        
+        with tempfile.TemporaryDirectory() as tmpdir:
+            file_path = os.path.join(tmpdir, file_name)
+            await telegram_file.download_to_drive(file_path)
+            
+            async with SessionLocal() as db:
+                parser = UniversalLinkParser(db)
+                await parser.process_document(file_path, file_name, mime_type)
+                
+        await update.message.reply_text(f"✅ Successfully ingested and embedded document: {file_name}")
+    except Exception as e:
+        logger.error(f"Failed to process document {file_name}: {e}")
+        await update.message.reply_text(f"❌ Failed to ingest document {file_name}:\n{str(e)[:200]}")
+
 def main():
     token = settings.telegram_bot_token
     if not token:
@@ -412,6 +449,7 @@ def main():
     )
 
     application.add_handler(MessageHandler(url_filter, handle_url))
+    application.add_handler(MessageHandler(filters.Document.ALL, handle_document))
     application.add_handler(MessageHandler(filters.TEXT & ~url_filter & ~filters.COMMAND, handle_text))
     application.add_handler(MessageReactionHandler(handle_reaction))
     application.add_handler(CommandHandler("forge", handle_forge))

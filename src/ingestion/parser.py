@@ -17,6 +17,7 @@ class SourceType(Enum):
     INSTAGRAM = "instagram"
     SUBSTACK = "substack"
     ARTICLE = "article"
+    DOCUMENT = "document"
 
 class UniversalLinkParser:
     def __init__(self, db_session: AsyncSession):
@@ -96,4 +97,41 @@ class UniversalLinkParser:
         await self.db.refresh(item)
         
         print(f"Success: {url} -> {domain_tags}")
+        return item
+
+
+    async def process_document(self, file_path: str, file_name: str, mime_type: str, ingestion_mode: str = 'manual') -> ContentItem:
+        from src.ingestion.document import extract_document_text
+        
+        raw_text = await extract_document_text(file_path, mime_type)
+        
+        if not raw_text or len(raw_text) < 10:
+            raise ValueError(f"Failed to extract meaningful text from document {file_name}")
+            
+        print(f"Checking language for {file_name} and translating if necessary...")
+        raw_text = await self.translator.force_english(raw_text)
+            
+        embedding = await self.embedder.embed_text(raw_text)
+        
+        domain_tags = await self.tagger.tag_content(
+            content_embedding=embedding,
+            raw_text=raw_text,
+            limit=3,
+            threshold_distance=0.60
+        )
+        
+        virtual_url = f"file://{file_name}"
+        
+        item = ContentItem(
+            source_url=virtual_url,
+            source_type=SourceType.DOCUMENT.value,
+            raw_text=raw_text,
+            embedding=embedding,
+            ingestion_mode=ingestion_mode
+        )
+        self.db.add(item)
+        await self.db.commit()
+        await self.db.refresh(item)
+        
+        print(f"Success: {file_name} -> {domain_tags}")
         return item
