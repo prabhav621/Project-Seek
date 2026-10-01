@@ -72,7 +72,7 @@ async def _process_individual(urls: list, chat_id: int, bot):
         await asyncio.sleep(12)
 
     try:
-        await bot.send_message(chat_id=chat_id, text=f"âœ… Batch ingestion completed!\nSuccess: {success_count}\nFailed: {fail_count}")
+        await bot.send_message(chat_id=chat_id, text=f"✅ Batch ingestion completed!\nSuccess: {success_count}\nFailed: {fail_count}")
     except Exception:
         print(f"Batch done: {success_count} success, {fail_count} failed (couldn't notify Telegram)")
 
@@ -132,11 +132,11 @@ async def _process_playlist(playlist_url: str, chat_id: int, bot):
                 parser = UniversalLinkParser(db)
                 await parser.process_url(v_url, ingestion_mode='manual')
                 success_count += 1
-                print(f"[{i+1}/{total}] âœ… Ingested: {v_url}")
+                print(f"[{i+1}/{total}] ✅ Ingested: {v_url}")
         except Exception as e:
             fail_count += 1
             failed_urls.append(v_url)
-            print(f"[{i+1}/{total}] âŒ Error on {v_url}: {e}")
+            print(f"[{i+1}/{total}] ❌ Error on {v_url}: {e}")
 
         # â”€â”€â”€ Pacing (Gemini RPM Calibration) â”€â”€â”€â”€â”€â”€
         if is_youtube:
@@ -160,7 +160,7 @@ async def _process_playlist(playlist_url: str, chat_id: int, bot):
             print(f"Could not write to failed_ingestions.txt: {e}")
 
     try:
-        final_msg = f"âœ… Playlist ingestion completed!\nSuccess: {success_count}\nFailed: {fail_count}\nTotal: {total}"
+        final_msg = f"✅ Playlist ingestion completed!\nSuccess: {success_count}\nFailed: {fail_count}\nTotal: {total}"
         if failed_urls:
             final_msg += f"\n\nâš ï¸ {len(failed_urls)} URLs failed. They have been logged to 'failed_ingestions.txt' on the server."
         await bot.send_message(chat_id=chat_id, text=final_msg)
