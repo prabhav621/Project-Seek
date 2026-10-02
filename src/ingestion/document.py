@@ -1,6 +1,7 @@
 import os
 import logging
 import asyncio
+import time
 from google import genai
 from src.config import settings, ModelTier
 from src.utils.retry import generate_content_with_retry
@@ -17,22 +18,19 @@ def _extract_document_text_sync(file_path: str, mime_type: str) -> str:
     # Upload with MIME type explicitly so Gemini handles it properly
     gemini_file = client.files.upload(file=file_path, config={"mime_type": mime_type})
     
-
-    import time
-    # Wait for processing
-    while True:
-        # Check both string representation and Enum name depending on SDK version
-        state_str = str(gemini_file.state).split('.')[-1]
-        if state_str != 'PROCESSING':
-            if state_str == 'FAILED':
-                raise Exception(f"Gemini failed to process document")
-            break
-            
-        logger.info(f"File {gemini_file.name} is processing. Waiting 5 seconds...")
-        time.sleep(5)
-        gemini_file = client.files.get(name=gemini_file.name)
-
     try:
+        # Wait for processing
+        while True:
+            state_str = str(gemini_file.state).split('.')[-1]
+            if state_str != 'PROCESSING':
+                if state_str == 'FAILED':
+                    raise Exception(f"Gemini failed to process document")
+                break
+                
+            logger.info(f"File {gemini_file.name} is processing. Waiting 5 seconds...")
+            time.sleep(5)
+            gemini_file = client.files.get(name=gemini_file.name)
+
         prompt = (
             "Extract all text from this document accurately.\n"
             "Preserve structure, headings, and formatting using clean Markdown.\n"
@@ -49,22 +47,7 @@ def _extract_document_text_sync(file_path: str, mime_type: str) -> str:
         )
         return response.text
     finally:
-    
-    import time
-    # Wait for processing
-    while True:
-        # Check both string representation and Enum name depending on SDK version
-        state_str = str(gemini_file.state).split('.')[-1]
-        if state_str != 'PROCESSING':
-            if state_str == 'FAILED':
-                raise Exception(f"Gemini failed to process document")
-            break
-            
-        logger.info(f"File {gemini_file.name} is processing. Waiting 5 seconds...")
-        time.sleep(5)
-        gemini_file = client.files.get(name=gemini_file.name)
-
-    try:
+        try:
             client.files.delete(name=gemini_file.name)
         except Exception as e:
             logger.warning(f"Failed to delete Gemini file {gemini_file.name}: {e}")
