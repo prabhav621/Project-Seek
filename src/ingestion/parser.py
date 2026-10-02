@@ -17,7 +17,7 @@ class SourceType(Enum):
     INSTAGRAM = "instagram"
     SUBSTACK = "substack"
     ARTICLE = "article"
-    DOCUMENT = "document"
+    DOCUMENT = "other"
 
 class UniversalLinkParser:
     def __init__(self, db_session: AsyncSession):
