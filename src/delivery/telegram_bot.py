@@ -2,6 +2,11 @@ from apscheduler.schedulers.asyncio import AsyncIOScheduler
 import pytz
 import sys
 import asyncio
+import logging
+logging.basicConfig(
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+    level=logging.INFO
+)
 import traceback
 from pathlib import Path
 from telegram import Update
