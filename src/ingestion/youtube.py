@@ -65,6 +65,37 @@ import threading
 _AUDIO_FALLBACK_SEMAPHORE = threading.Semaphore(2)
 _AUDIO_DOWNLOAD_TIMEOUT_S = 300
 _GEMINI_UPLOAD_TIMEOUT_MS = 180_000
+_GEMINI_URL_TIMEOUT_MS = 300_000
+
+
+def _extract_via_gemini_url(video_id: str) -> str:
+    """Let Gemini fetch and transcribe the YouTube video server-side (preview feature).
+    Nothing is downloaded or uploaded by us, so it uses no server/proxy bandwidth."""
+    from google import genai
+    from google.genai import types
+    from src.config import settings, ModelTier
+    from src.utils.retry import generate_content_with_retry
+
+    client = genai.Client(
+        api_key=settings.gemini_api_key,
+        http_options=types.HttpOptions(timeout=_GEMINI_URL_TIMEOUT_MS),
+    )
+    raw_model = ModelTier.FLASH_LITE.value.replace("gemini/", "")
+    response = generate_content_with_retry(
+        client=client,
+        model=raw_model,
+        contents=[types.Content(parts=[
+            types.Part(file_data=types.FileData(
+                file_uri=f"https://www.youtube.com/watch?v={video_id}")),
+            types.Part(text=(
+                "Transcribe the spoken audio of this video verbatim. Do not summarize.\n"
+                "If the audio is not in English, translate the transcript into English.")),
+        ])],
+    )
+    text = (response.text or "").strip()
+    if len(text) < 50:
+        raise ValueError(f"Gemini returned an empty/too-short transcript for {video_id}")
+    return text
 
 
 def _extract_via_audio_fallback(video_id: str) -> str:
@@ -201,6 +232,14 @@ def extract_subtitles(url: str) -> str:
             e2 = exc2
             logger.warning(f'yt-dlp failed for {video_id} (Attempt {attempt+1}/2): {str(exc2)[:100]}')
 
+    e4 = None
+    try:
+        logger.info(f'Falling back to Gemini direct YouTube URL transcription for {video_id}...')
+        return _extract_via_gemini_url(video_id)
+    except Exception as exc4:
+        e4 = exc4
+        logger.warning(f'Gemini direct-URL failed for {video_id}: {str(exc4)[:100]}')
+
     e3 = None
     try:
         logger.info(f'Falling back to Gemini 3.5 Flash-Lite native audio transcription for {video_id}...')
@@ -212,7 +251,8 @@ def extract_subtitles(url: str) -> str:
     msg1 = str(e1)[:100] if e1 else 'None'
     msg2 = str(e2)[:100] if e2 else 'None'
     msg3 = str(e3)[:100] if e3 else 'None'
+    msg4 = str(e4)[:100] if e4 else 'None'
     raise ValueError(
         f'Failed to fetch transcript for {video_id}. '
-        f'Transcript-API: {msg1} | yt-dlp: {msg2} | Audio: {msg3}'
+        f'Transcript-API: {msg1} | yt-dlp: {msg2} | Gemini-URL: {msg4} | Audio: {msg3}'
     )
