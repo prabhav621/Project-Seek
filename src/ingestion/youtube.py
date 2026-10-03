@@ -59,11 +59,25 @@ def _extract_via_transcript_api(video_id: str) -> str:
 # ─── Fallback: yt-dlp subtitle extraction ────────────────────────────
 
 
+import threading
+
+# Heavy audio downloads/uploads are limited to 2 at a time (extraction runs in worker threads).
+_AUDIO_FALLBACK_SEMAPHORE = threading.Semaphore(2)
+_AUDIO_DOWNLOAD_TIMEOUT_S = 300
+_GEMINI_UPLOAD_TIMEOUT_MS = 180_000
+
+
 def _extract_via_audio_fallback(video_id: str) -> str:
+    with _AUDIO_FALLBACK_SEMAPHORE:
+        return _extract_via_audio_fallback_inner(video_id)
+
+
+def _extract_via_audio_fallback_inner(video_id: str) -> str:
     import subprocess
     import tempfile
     import os
     from google import genai
+    from google.genai import types
     from src.config import settings, ModelTier
     from src.utils.retry import generate_content_with_retry
     
@@ -75,7 +89,7 @@ def _extract_via_audio_fallback(video_id: str) -> str:
             "-o", output_template,
             f"https://www.youtube.com/watch?v={video_id}"
         ]
-        subprocess.run(cmd, check=True, capture_output=True)
+        subprocess.run(cmd, check=True, capture_output=True, timeout=_AUDIO_DOWNLOAD_TIMEOUT_S)
         
         audio_file = None
         for f in os.listdir(tmpdir):
@@ -86,7 +100,10 @@ def _extract_via_audio_fallback(video_id: str) -> str:
         if not audio_file:
             raise Exception("yt-dlp did not produce an audio file")
             
-        client = genai.Client(api_key=settings.gemini_api_key)
+        client = genai.Client(
+            api_key=settings.gemini_api_key,
+            http_options=types.HttpOptions(timeout=_GEMINI_UPLOAD_TIMEOUT_MS),
+        )
         logger.info(f"Uploading {audio_file} to Gemini for native transcription...")
         gemini_file = client.files.upload(file=audio_file)
         
