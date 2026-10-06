@@ -18,17 +18,20 @@ async def run_backfill():
     engine = DualLayerContextEngine(root_dir=str(root_path))
     
     async with SessionLocal() as db:
-        # Find all ContentItems that don't have a corresponding NeutralBrick
-        query = select(ContentItem).outerjoin(
+        # Fetch ONLY the IDs to avoid SQLAlchemy lazy-loading / MissingGreenlet errors across commits
+        query = select(ContentItem.id).outerjoin(
             NeutralBrick, ContentItem.id == NeutralBrick.source_content_id
         ).filter(NeutralBrick.id == None)
         
-        items_to_process = (await db.execute(query)).scalars().all()
+        item_ids = (await db.execute(query)).scalars().all()
         
-        total_items = len(items_to_process)
+        total_items = len(item_ids)
         print(f"Found {total_items} legacy items needing Neutral Bricks.")
         
-        for idx, item in enumerate(items_to_process, 1):
+        for idx, item_id in enumerate(item_ids, 1):
+            # Fetch the actual item fresh for this iteration
+            item = (await db.execute(select(ContentItem).filter(ContentItem.id == item_id))).scalar_one()
+            
             if not item.raw_text:
                 print(f"[{idx}/{total_items}] Skipping Item {item.id} - No raw text.")
                 continue
@@ -56,10 +59,9 @@ async def run_backfill():
                 print(f"  -> Error processing item: {e}")
                 await db.rollback()
             
-            # Rate Limiting: Sleep to ensure we don't trip free tier limits
-            # 300 links * 15 seconds = 1.25 hours
+            # Rate Limiting: await asyncio.sleep instead of time.sleep so we don't block the async loop
             print("  -> Sleeping 15 seconds to respect rate limits...")
-            time.sleep(15)
+            await asyncio.sleep(15)
             
     print("Backfill Complete!")
 
