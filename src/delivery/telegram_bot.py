@@ -290,6 +290,36 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
         await message.reply_text(response_text)
 
+    else:
+        # LIBRARIAN (REVERSE RAG) FEATURE
+        query = message.text
+        processing_msg = await message.reply_text('📚 Searching your knowledge base...')
+        
+        chat_id = message.chat_id
+        focus = None
+        if chat_id in active_focus:
+            focus_data = active_focus[chat_id]
+            from datetime import datetime
+            if datetime.now() > focus_data['expires_at']:
+                del active_focus[chat_id]
+            else:
+                focus = focus_data['goal']
+                
+        try:
+            from src.synthesis.strategy_generator import DualLayerContextEngine
+            engine = DualLayerContextEngine()
+            
+            async with SessionLocal() as db:
+                insight = await engine.run_librarian(query, db, focus)
+                
+            output = f'📚 **The Librarian Says:**\n\n{insight}'
+            if focus:
+                output = f'[❗️ Focus State: {focus}]\n\n' + output
+                
+            await processing_msg.edit_text(output, parse_mode='Markdown')
+        except Exception as e:
+            await processing_msg.edit_text(f'Librarian search failed: {e}')
+
 
 
 def _update_drift_sync(item_id: str, engagement_type: str, reply_analysis: dict = None):

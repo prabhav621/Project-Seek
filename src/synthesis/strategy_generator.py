@@ -134,3 +134,59 @@ IMPORTANT: Because Focus State is active, you MUST strictly prepend your output 
                 
         logger.error("All models in the DEEP_REASONING pool failed for apply_lens.")
         return None
+
+    async def run_librarian(self, query: str, db, focus_state: Optional[str] = None) -> Optional[str]:
+        """Performs vector search across ContentItems, gathers NeutralBricks, and synthesizes."""
+        from src.ingestion.embedder import get_embedder
+        from src.db.models import ContentItem, NeutralBrick
+        from sqlalchemy import select
+        
+        embedder = get_embedder()
+        query_vector = await embedder.embed_text(query)
+        
+        # Search for top 3 relevant articles
+        search_results = (await db.execute(
+            select(ContentItem)
+            .filter(ContentItem.embedding != None)
+            .order_by(ContentItem.embedding.cosine_distance(query_vector))
+            .limit(3)
+        )).scalars().all()
+        
+        if not search_results:
+            return "Your knowledge base is empty or has no embedded content yet."
+            
+        context_blocks = []
+        for item in search_results:
+            brick = (await db.execute(select(NeutralBrick).filter(NeutralBrick.source_content_id == item.id))).scalar_one_or_none()
+            if brick:
+                context_blocks.append(f"Title: {item.title}\nCore Thesis: {brick.core_thesis}\nMechanics: {brick.key_mechanics}\nPointers: {brick.critical_pointers}")
+            else:
+                context_blocks.append(f"Title: {item.title}\nRaw Snippet: {item.raw_text[:1000]}")
+                
+        combined_context = "\n\n---\n\n".join(context_blocks)
+        
+        system_prompt = self.build_system_prompt(focus_state)
+        system_prompt += "\n\nYOU ARE THE LIBRARIAN. The Founder is exploring a specific idea. I will provide you with highly relevant Neutral Bricks retrieved from their Knowledge Base. Your job is to synthesize these bricks, highlight overlapping patterns, and explain what their Knowledge Base says about this idea. Be ruthless, concise, and profound. DO NOT just summarize the articles individually. Merge them into a single strategic insight."
+        
+        messages = [
+            {"role": "system", "content": system_prompt},
+            {"role": "user", "content": f"IDEA QUERY: {query}\n\nRETRIEVED KNOWLEDGE BASE BRICKS:\n{combined_context}"}
+        ]
+        
+        model_pool = MODEL_POOLS.get(Capability.DEEP_REASONING, [])
+        for model_id in model_pool:
+            try:
+                import litellm
+                from src.config import settings
+                response = await litellm.acompletion(
+                    model=model_id,
+                    messages=messages,
+                    api_key=settings.openrouter_api_key if "openrouter" in model_id else (
+                        settings.nvidia_api_key if "nvidia" in model_id else settings.cloudflare_api_key
+                    )
+                )
+                return response.choices[0].message.content
+            except Exception as e:
+                continue
+                
+        return "All reasoning models failed to run the Librarian."
