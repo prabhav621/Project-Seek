@@ -325,6 +325,9 @@ async def post_init(application: Application):
     
     from telegram import BotCommand
     commands = [
+        BotCommand("start", "Start the bot"),
+        BotCommand("forge", "Generate the Daily Forge"),
+        BotCommand("help", "Show help message"),
         BotCommand("strategize", "Ingest URL to Neutral Brick"),
         BotCommand("focus", "Set temporary focus"),
         BotCommand("unfocus", "Clear focus"),
@@ -438,7 +441,7 @@ async def handle_strategize(update: Update, context: ContextTypes.DEFAULT_TYPE):
     
     args = context.args
     if not args:
-        await message.reply_text("Usage: /strategize <URL>")
+        await message.reply_text("Because of Telegram's dropdown rules, tapping a menu command sends it immediately. Please explicitly type: /strategize <URL>")
         return
         
     url = args[0]
@@ -453,14 +456,58 @@ async def handle_strategize(update: Update, context: ContextTypes.DEFAULT_TYPE):
         else:
             focus = focus_data["goal"]
             
-    url_content = f"Mock content for {url}"
+    processing_msg = await message.reply_text("Extraction started. Ingesting content...")
     
-    from src.synthesis.strategy_generator import DualLayerContextEngine
-    engine = DualLayerContextEngine()
-    
-    strategy = await engine.generate_strategy(url_content, focus)
-    
-    await message.reply_text(str(strategy))
+    try:
+        from src.ingestion.parser import UniversalLinkParser
+        async with SessionLocal() as db:
+            parser = UniversalLinkParser(db)
+            content_item = await parser.process_url(url, ingestion_mode='manual')
+            
+            if not content_item or not content_item.raw_text:
+                await processing_msg.edit_text("Failed to extract meaningful text from this URL.")
+                return
+                
+            await processing_msg.edit_text("Content ingested. Generating Neutral Brick...")
+            
+            from src.synthesis.strategy_generator import DualLayerContextEngine
+            engine = DualLayerContextEngine()
+            
+            brick_dict = await engine.generate_strategy(content_item.raw_text[:8000], focus)
+            
+            if not brick_dict:
+                await processing_msg.edit_text("Failed to generate strategy brick from content.")
+                return
+                
+            from src.db.models import NeutralBrick
+            # Check if brick exists
+            existing_brick = (await db.execute(select(NeutralBrick).filter(NeutralBrick.source_content_id == content_item.id))).scalar_one_or_none()
+            
+            if not existing_brick:
+                new_brick = NeutralBrick(
+                    source_content_id=content_item.id,
+                    core_thesis=brick_dict.get('core_thesis', 'N/A'),
+                    key_mechanics=brick_dict.get('key_mechanics', 'N/A'),
+                    critical_pointers=brick_dict.get('critical_pointers', [])
+                )
+                db.add(new_brick)
+                await db.commit()
+                
+            # Format output
+            pointers = "\n".join(f"• {p}" for p in brick_dict.get('critical_pointers', []))
+            output = (
+                f"🧱 **Core Thesis:**\n{brick_dict.get('core_thesis', '')}\n\n"
+                f"⚙️ **Key Mechanics:**\n{brick_dict.get('key_mechanics', '')}\n\n"
+                f"🎯 **Critical Pointers:**\n{pointers}"
+            )
+            
+            if focus:
+                output = f"[❗️ Focus State: {focus}]\n\n" + output
+                
+            await processing_msg.edit_text(output, parse_mode='Markdown')
+            
+    except Exception as e:
+        await processing_msg.edit_text(f"Error during strategize: {e}")
 
 async def handle_lens(update: Update, context: ContextTypes.DEFAULT_TYPE):
     message = update.message
@@ -564,10 +611,6 @@ def main():
         filters.CaptionEntity(MessageEntityType.TEXT_LINK)
     )
 
-    application.add_handler(MessageHandler(url_filter, handle_url))
-    application.add_handler(MessageHandler(filters.Document.ALL, handle_document))
-    application.add_handler(MessageHandler(filters.TEXT & ~url_filter & ~filters.COMMAND, handle_text))
-    application.add_handler(MessageReactionHandler(handle_reaction))
     application.add_handler(CommandHandler("forge", handle_forge))
     application.add_handler(CommandHandler("end", handle_end))
     application.add_handler(CommandHandler("focus", handle_focus))
@@ -582,6 +625,11 @@ def main():
     application.add_handler(CommandHandler("lens_first_principles", handle_lens))
     
     application.add_handler(CallbackQueryHandler(handle_callback_query))
+
+    application.add_handler(MessageHandler(url_filter, handle_url))
+    application.add_handler(MessageHandler(filters.Document.ALL, handle_document))
+    application.add_handler(MessageHandler(filters.TEXT & ~url_filter & ~filters.COMMAND, handle_text))
+    application.add_handler(MessageReactionHandler(handle_reaction))
 
     application.post_init = post_init
 

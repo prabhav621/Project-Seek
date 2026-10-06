@@ -56,16 +56,7 @@ class UniversalLinkParser:
             return existing
             
         # 2. Scrape Text
-        try:
-            import aiohttp
-            async with aiohttp.ClientSession() as session:
-                async with session.get(f"https://r.jina.ai/{url}") as resp:
-                    if resp.status == 200:
-                        raw_text = await resp.text()
-                    else:
-                        raise ValueError(f"Jina.ai returned {resp.status}")
-        except Exception as e:
-            print(f"Jina.ai extraction failed: {e}. Falling back to default extractors.")
+        if source_type in [SourceType.YOUTUBE, SourceType.X_TWITTER, SourceType.INSTAGRAM]:
             if source_type == SourceType.YOUTUBE:
                 raw_text = await asyncio.to_thread(extract_subtitles, url)
             elif source_type == SourceType.X_TWITTER:
@@ -73,7 +64,17 @@ class UniversalLinkParser:
             elif source_type == SourceType.INSTAGRAM:
                 from src.ingestion.instagram import extract_instagram_content
                 raw_text = await asyncio.to_thread(extract_instagram_content, url)
-            else:
+        else:
+            try:
+                import aiohttp
+                async with aiohttp.ClientSession() as session:
+                    async with session.get(f"https://r.jina.ai/{url}") as resp:
+                        if resp.status == 200:
+                            raw_text = await resp.text()
+                        else:
+                            raise ValueError(f"Jina.ai returned {resp.status}")
+            except Exception as e:
+                print(f"Jina.ai extraction failed: {e}. Falling back to default extractors.")
                 raw_text = await scrape_article(url)
             
         if not raw_text or len(raw_text) < 50:
