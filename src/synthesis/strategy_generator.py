@@ -148,6 +148,32 @@ IMPORTANT: Because Focus State is active, you MUST strictly prepend your output 
         logger.error("All models in the DEEP_REASONING pool failed for apply_lens.")
         return None
 
+    
+    async def ask_brick(self, brick_text: str, question: str, focus_state: Optional[str] = None) -> Optional[str]:
+        system_prompt = self.build_system_prompt(focus_state)
+        system_prompt += "\n\nThe user is asking a specific question about the provided Neutral Brick. Answer their question directly using the insights from the brick and your own reasoning."
+        
+        messages = [
+            {"role": "system", "content": system_prompt},
+            {"role": "user", "content": f"NEUTRAL BRICK:\n{brick_text}\n\nUSER QUESTION: {question}"}
+        ]
+        
+        from src.config import MODEL_POOLS, Capability
+        import litellm
+        model_pool = MODEL_POOLS.get(Capability.DEEP_REASONING, [])
+        for model_id in model_pool:
+            try:
+                kwargs = _get_kwargs(model_id)
+                response = await litellm.acompletion(
+                    model=model_id,
+                    messages=messages,
+                    **kwargs
+                )
+                return response.choices[0].message.content
+            except Exception as e:
+                continue
+        return "Failed to analyze the brick."
+
     async def run_librarian(self, query: str, db, focus_state: Optional[str] = None) -> Optional[str]:
         """Performs vector search across ContentItems, gathers NeutralBricks, and synthesizes."""
         from src.ingestion.embedder import get_embedder

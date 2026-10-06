@@ -277,6 +277,31 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
         original_item_text = message.reply_to_message.text
         reply_text = message.text
 
+        if "?? **Core Thesis:**" in original_item_text or "Core Thesis:" in original_item_text:
+            processing_msg = await message.reply_text("?? Analyzing your question against the Brick...")
+            
+            chat_id = message.chat_id
+            focus = None
+            if chat_id in active_focus:
+                focus_data = active_focus[chat_id]
+                from datetime import datetime
+                if datetime.now() > focus_data['expires_at']:
+                    del active_focus[chat_id]
+                else:
+                    focus = focus_data['goal']
+            
+            try:
+                from src.synthesis.strategy_generator import DualLayerContextEngine
+                engine = DualLayerContextEngine()
+                insight = await engine.ask_brick(original_item_text, reply_text, focus)
+                output = f"?? **Insight:**\n\n{insight}"
+                if focus:
+                    output = f"[?? Focus State: {focus}]\n\n" + output
+                await processing_msg.edit_text(output, parse_mode='Markdown')
+            except Exception as e:
+                await processing_msg.edit_text(f"Failed to analyze brick: {e}")
+            return
+
         from src.models import DailyItemResponse
         context_item = DailyItemResponse(item_type="custom", context=message.reply_to_message.text)
         
