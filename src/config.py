@@ -54,10 +54,10 @@ MODEL_POOLS = {
         "cloudflare/@cf/meta/llama-3-8b-instruct"
     ],
     Capability.FAST_CREATIVE: [
-        "openrouter/google/gemini-flash-1.5",
-        "openrouter/meta-llama/llama-3-8b-instruct",
-        "gemini/gemini-1.5-flash",
-        "cloudflare/@cf/meta/llama-3-8b-instruct"
+        "gemini/gemini-3.5-flash",
+        "openrouter/google/gemini-2.5-flash",
+        "openrouter/meta-llama/llama-3.1-8b-instruct",
+        "cloudflare/@cf/meta/llama-3.1-8b-instruct"
     ]
 }
 

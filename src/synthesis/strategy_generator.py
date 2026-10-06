@@ -13,6 +13,20 @@ class StrategyBrick(BaseModel):
     key_mechanics: str = Field(description="Objective mechanics of how it works without fluff.")
     critical_pointers: list[str] = Field(description="A list of dense, objective pointers without unnecessary sentences.")
 
+
+def _get_api_key(model_id: str) -> str:
+    from src.config import settings
+    if "openrouter" in model_id: return settings.openrouter_api_key
+    if "nvidia" in model_id: return settings.nvidia_api_key
+    if "gemini" in model_id: return settings.gemini_api_key
+    return settings.cloudflare_api_key
+
+def _get_kwargs(model_id: str) -> dict:
+    kwargs = {"api_key": _get_api_key(model_id)}
+    if "cloudflare" in model_id:
+        kwargs["drop_params"] = True
+    return kwargs
+
 class DualLayerContextEngine:
     def __init__(self, root_dir: str = "."):
         self.root_dir = root_dir
@@ -35,7 +49,7 @@ class DualLayerContextEngine:
 {global_context}
 
 NEUTRAL BRICK EXTRACTION:
-Ruthlessly strip unnecessary sentences, fluff, and build-up. Compress the article into dense, objective pointers (a 'Neutral Brick'). Do not use unnecessary adjectives. Be objective and direct.
+Ruthlessly strip unnecessary sentences, fluff, and build-up. Compress the article into dense, objective pointers (a 'Neutral Brick'). Do not use unnecessary adjectives. Be objective and direct.\nOUTPUT STRICTLY A RAW JSON DICTIONARY with keys: 'core_thesis' (string), 'key_mechanics' (string), and 'critical_pointers' (list of strings).
 
 """
         # 3. Ephemeral Focus Context (Highest Priority Overriding Layer)
@@ -69,13 +83,14 @@ IMPORTANT: Because Focus State is active, you MUST strictly prepend your output 
         for model_id in model_pool:
             try:
                 logger.info(f"Attempting strategy generation with model: {model_id}")
+                kwargs = _get_kwargs(model_id)
+                if "cloudflare" not in model_id:
+                    kwargs["response_format"] = StrategyBrick
+
                 response = await litellm.acompletion(
                     model=model_id,
                     messages=messages,
-                    response_format=StrategyBrick,
-                    api_key=settings.openrouter_api_key if "openrouter" in model_id else (
-                        settings.nvidia_api_key if "nvidia" in model_id else settings.cloudflare_api_key
-                    )
+                    **kwargs
                 )
                 
                 content = response.choices[0].message.content
@@ -123,9 +138,7 @@ IMPORTANT: Because Focus State is active, you MUST strictly prepend your output 
                 response = await litellm.acompletion(
                     model=model_id,
                     messages=messages,
-                    api_key=settings.openrouter_api_key if "openrouter" in model_id else (
-                        settings.nvidia_api_key if "nvidia" in model_id else settings.cloudflare_api_key
-                    )
+                    **_get_kwargs(model_id)
                 )
                 return response.choices[0].message.content
             except Exception as e:
@@ -181,9 +194,7 @@ IMPORTANT: Because Focus State is active, you MUST strictly prepend your output 
                 response = await litellm.acompletion(
                     model=model_id,
                     messages=messages,
-                    api_key=settings.openrouter_api_key if "openrouter" in model_id else (
-                        settings.nvidia_api_key if "nvidia" in model_id else settings.cloudflare_api_key
-                    )
+                    **_get_kwargs(model_id)
                 )
                 return response.choices[0].message.content
             except Exception as e:
