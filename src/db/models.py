@@ -26,7 +26,10 @@ class ContentItem(Base):
     embedding = Column(Vector(768))
     processed = Column(Boolean, server_default='false')
 
+    strategy_status = Column(Text, server_default='pending')
+
     daily_items = relationship("DailyItem", back_populates="content_item")
+    neutral_bricks = relationship("NeutralBrick", back_populates="content_item")
 
     __table_args__ = (
         CheckConstraint(
@@ -48,6 +51,10 @@ class ContentItem(Base):
         CheckConstraint(
             "extraction_status IN ('pending', 'processing', 'completed', 'failed', 'retry')",
             name='content_items_extraction_status_check'
+        ),
+        CheckConstraint(
+            "strategy_status IN ('pending', 'processing', 'completed', 'skipped', 'failed')",
+            name='content_items_strategy_status_check'
         ),
     )
 
@@ -124,3 +131,31 @@ class InterestVector(Base):
             name='interest_vectors_weight_check'
         ),
     )
+
+class NeutralBrick(Base):
+    __tablename__ = 'neutral_bricks'
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    source_content_id = Column(UUID(as_uuid=True), ForeignKey('content_items.id'), index=True)
+    core_thesis = Column(Text)
+    key_mechanics = Column(Text)
+    critical_pointers = Column(JSONB)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
+    
+    embedding = Column(Vector(768))
+
+    content_item = relationship("ContentItem", back_populates="neutral_bricks")
+    influence_logs = relationship("InfluenceLog", back_populates="neutral_brick")
+
+class InfluenceLog(Base):
+    __tablename__ = 'influence_log'
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    brick_id = Column(UUID(as_uuid=True), ForeignKey('neutral_bricks.id'), index=True)
+    decision_made = Column(Text)
+    timestamp = Column(DateTime(timezone=True), server_default=func.now())
+    
+    neutral_brick = relationship("NeutralBrick", back_populates="influence_logs")
+
+

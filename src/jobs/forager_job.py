@@ -16,6 +16,18 @@ from google import genai
 from duckduckgo_search import AsyncDDGS
 from src.ingestion.parser import UniversalLinkParser
 
+async def notify_telegram(message: str):
+    from telegram import Bot
+    from src.config import settings
+    bot_token = settings.telegram_bot_token
+    chat_id = settings.telegram_chat_id
+    if bot_token and chat_id:
+        bot = Bot(token=bot_token)
+        try:
+            await bot.send_message(chat_id=chat_id, text=message)
+        except Exception as e:
+            print(f"Failed to ping telegram: {e}")
+
 async def run_forager():
     print("Initiating Autonomous Forager...")
     client = genai.Client(api_key=settings.gemini_api_key)
@@ -73,6 +85,7 @@ async def run_forager():
                 try:
                     await parser.process_url(url, ingestion_mode='auto')
                     print(f"Successfully ingested {url}")
+                    await notify_telegram(f"🤖 **Auto-Forager Alert**\nSuccessfully auto-ingested high-value item:\n{url}")
                 except Exception as e:
                     print(f"Failed to ingest {url}: {e}")
 
@@ -81,4 +94,3 @@ async def run_forager():
 
 if __name__ == '__main__':
     asyncio.run(run_forager())
-

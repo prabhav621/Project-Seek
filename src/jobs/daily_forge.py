@@ -39,6 +39,8 @@ async def send_forge():
         # Run the synchronous curator in a thread to avoid blocking
         portfolio = await asyncio.to_thread(_run_forge_sync, target_date)
 
+        neutral_bricks = portfolio.pop('neutral_bricks', [])
+
         # Flatten portfolio into a list
         items = []
         for key, item_or_list in portfolio.items():
@@ -47,11 +49,9 @@ async def send_forge():
             else:
                 items.append(item_or_list)
 
-        if not items:
+        if not items and not neutral_bricks:
             print("No items found for daily forge.")
             return
-
-        formatted_message = format_daily_forge(items, datetime.now())
 
         bot_token = settings.telegram_bot_token
         chat_id = settings.telegram_chat_id
@@ -63,25 +63,52 @@ async def send_forge():
         bot = Bot(token=bot_token)
         print("Sending message via Telegram...")
         
-        # Telegram max length is 4096. Split safely at newlines.
-        MAX_LEN = 4000
-        parts = []
-        remaining = formatted_message
-        
-        while len(remaining) > 0:
-            if len(remaining) <= MAX_LEN:
-                parts.append(remaining)
-                break
+        if items:
+            formatted_message = format_daily_forge(items, datetime.now(), [])
             
-            split_at = remaining.rfind('\n', 0, MAX_LEN)
-            if split_at == -1:
-                split_at = MAX_LEN
+            # Telegram max length is 4096. Split safely at newlines.
+            MAX_LEN = 4000
+            parts = []
+            remaining = formatted_message
+            
+            while len(remaining) > 0:
+                if len(remaining) <= MAX_LEN:
+                    parts.append(remaining)
+                    break
                 
-            parts.append(remaining[:split_at])
-            remaining = remaining[split_at:].lstrip()
+                split_at = remaining.rfind('\n', 0, MAX_LEN)
+                if split_at == -1:
+                    split_at = MAX_LEN
+                    
+                parts.append(remaining[:split_at])
+                remaining = remaining[split_at:].lstrip()
 
-        for part in parts:
-            await bot.send_message(chat_id=chat_id, text=part)
+            for part in parts:
+                await bot.send_message(chat_id=chat_id, text=part)
+                await asyncio.sleep(0.5)
+                
+        from telegram import InlineKeyboardMarkup, InlineKeyboardButton
+        
+        for brick in neutral_bricks:
+            pointers = "\n".join([f"- {p}" for p in brick.critical_pointers]) if brick.critical_pointers else "None"
+            brick_text = f"🧱 <b>Neutral Brick</b>\n\n<b>Core Thesis:</b>\n{brick.core_thesis}\n\n<b>Mechanics:</b>\n{brick.key_mechanics}\n\n<b>Pointers:</b>\n{pointers}"
+            
+            keyboard = [
+                [
+                    InlineKeyboardButton("Architect", callback_data=f"lens:architect:{brick.id}"),
+                    InlineKeyboardButton("Growth", callback_data=f"lens:growth:{brick.id}")
+                ],
+                [
+                    InlineKeyboardButton("Red Team", callback_data=f"lens:redteam:{brick.id}"),
+                    InlineKeyboardButton("Validator", callback_data=f"lens:validator:{brick.id}")
+                ],
+                [
+                    InlineKeyboardButton("First Principles", callback_data=f"lens:1stprinciple:{brick.id}")
+                ]
+            ]
+            reply_markup = InlineKeyboardMarkup(keyboard)
+            
+            await bot.send_message(chat_id=chat_id, text=brick_text, reply_markup=reply_markup, parse_mode='HTML')
             await asyncio.sleep(0.5)
             
         print("Done.")

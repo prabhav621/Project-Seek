@@ -1,0 +1,5 @@
+I am a solo systems architect, entrepreneur, and lean developer building highly leveraged AI applications focused on Retrieval-Augmented Generation (RAG) and Personal Knowledge Management (PKM), decentralized civic engagement and GovTech platforms, and hybrid embedded-hardware IoT mobility solutions.
+
+I am aggressively seeking to build new ventures, rapidly expand my technical domains, and establish low-maintenance, automated cash flow (e.g., micro-SaaS, digital product subscriptions, and API wrappers) to fund my more ambitious, capital-intensive engineering projects.
+
+My operational constraints require ruthless pragmatism: I prioritize cycle time over elegance, monolithic architectures over microservices, and intelligent cloud-API orchestration over heavy local compute. Filter all incoming content through this exact lens—discard academic theory and fluff. Extract only the asymmetric, battle-tested architectural patterns, product-led growth strategies, scalable engineering optimizations, and rapid monetization tactics that a solo developer can implement immediately to either generate automated cash flow or accelerate ambitious development.

@@ -89,22 +89,21 @@ async def build_and_send_forge():
                 return
 
         try:
-            # 1. Deep Kata
+            # 1. Quick Kata (replaces Deep Kata)
             dk_item = items[0]
             dk_domain = top_interests[0].domain
-            print(f"Generating Deep Kata for {dk_domain}...")
-            dk = generate_deep_kata(dk_item.raw_text[:3000], dk_domain)
+            print(f"Generating Quick Kata for {dk_domain}...")
+            qk1 = generate_quick_kata(dk_item.raw_text[:3000], dk_domain)
             db.add(DailyItem(
-                content_id=dk_item.id, item_type='deep_kata',
+                content_id=dk_item.id, item_type='quick_kata',
                 embedding=dk_item.embedding,
-                title=dk.title, context=dk.context, crisis=dk.crisis,
-                architecture=dk.architecture, kata_question=dk.kata_question,
-                mirror_question=dk.mirror_question, domains=[dk_domain],
+                title=qk1.title, context=qk1.context, kata_question=qk1.kata_question,
+                domains=[dk_domain],
                 suggestion_url=dk_item.source_url
             ))
 
-            # 2. Quick Katas
-            for i, qk_item in enumerate(items[1:3]):
+            # 2. Quick Katas (only 1 now to make exactly 2 total)
+            for i, qk_item in enumerate(items[1:2]):
                 qk_domain = top_interests[i+1].domain
                 print(f"Generating Quick Kata for {qk_domain}...")
                 qk = generate_quick_kata(qk_item.raw_text[:3000], qk_domain)

@@ -119,6 +119,7 @@ def curate_daily_forge(db: Session, target_date: date) -> dict:
     if suggestion:
         portfolio['curated_suggestion'] = suggestion.DailyItem
         
+        
     # Mark all selected items with the target forge_date
     for key, item in portfolio.items():
         if isinstance(item, list):
@@ -127,6 +128,10 @@ def curate_daily_forge(db: Session, target_date: date) -> dict:
         else:
             item.forge_date = target_date
             
+    from src.db.models import NeutralBrick
+    bricks = db.query(NeutralBrick).order_by(NeutralBrick.created_at.desc()).limit(3).all()
+    portfolio['neutral_bricks'] = bricks
+
     db.commit()
     
     return portfolio

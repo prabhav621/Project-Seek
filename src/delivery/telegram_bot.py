@@ -10,9 +10,12 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 import traceback
 from pathlib import Path
-from telegram import Update
-from telegram.constants import MessageEntityType
-from telegram.ext import Application, ContextTypes, MessageHandler, filters, MessageReactionHandler, CommandHandler
+from telegram import Update, InlineKeyboardMarkup, InlineKeyboardButton
+from telegram.constants import MessageEntityType, ParseMode
+from telegram.ext import Application, ContextTypes, MessageHandler, filters, MessageReactionHandler, CommandHandler, CallbackQueryHandler
+from datetime import datetime, timedelta
+
+active_focus = {}
 
 # Add project root to path
 root_path = Path(__file__).resolve().parent.parent.parent
@@ -274,77 +277,18 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
         original_item_text = message.reply_to_message.text
         reply_text = message.text
 
+        from src.models import DailyItemResponse
+        context_item = DailyItemResponse(item_type="custom", context=message.reply_to_message.text)
+        
         async with SessionLocal() as db:
-            # Fetch the most recent item to establish the batch time window
-            newest = (await db.execute(select(DailyItem).order_by(DailyItem.created_at.desc()))).scalars().first()
-            if not newest:
-                await message.reply_text("No Daily Forge found to associate this reply with.")
-                return
-                
-            # Fetch all items created within 10 minutes of the newest item (the whole digest)
-            from datetime import timedelta
-            batch_start = newest.created_at - timedelta(minutes=10)
-            
-            batch_items_query = await db.execute(
-                select(DailyItem)
-                .filter(DailyItem.created_at >= batch_start)
-                .order_by(DailyItem.created_at.desc())
-            )
-            batch_items = batch_items_query.scalars().all()
-            
-            latest_item = newest
-            if len(batch_items) > 1:
-                # Use the router agent to figure out which item they are replying to
-                from src.intelligence.router_agent import route_reply_sync
-                from src.models import DailyItemResponse
-                
-                # Convert to dicts for the router
-                candidate_dicts = [DailyItemResponse.model_validate(item).model_dump() for item in batch_items]
-                matched_id = await asyncio.to_thread(route_reply_sync, reply_text, candidate_dicts)
-                
-                # Find the matched item in the DB list
-                for item in batch_items:
-                    if str(item.id) == matched_id:
-                        latest_item = item
-                        break
+            top_domains_objs = (await db.execute(select(InterestVector).order_by(InterestVector.weight.desc()).limit(5))).scalars().all()
+            top_domains = [td.domain for td in top_domains_objs]
 
-            analyzer = ReplyAnalyzer()
-            try:
-                analysis = await asyncio.to_thread(analyzer.analyze, reply_text, original_item_text)
-            except Exception as e:
-                await message.reply_text("Failed to analyze your reply.")
-                return
+        chat = SeekChat(context_item=context_item, top_domains=top_domains)
+        response_text = await asyncio.to_thread(chat.send_message, reply_text)
+        context.user_data['seek_chat'] = chat
 
-            engagement = 'debated' if analysis.agreement_level in ['disagree', 'strong_disagree'] else 'responded'
-            analysis_dict = analysis.model_dump()
-
-            # update_drift uses sync ORM — run in thread with its own sync session
-            await asyncio.to_thread(
-                _update_drift_sync,
-                str(latest_item.id),
-                engagement,
-                analysis_dict
-            )
-
-            latest_item.engagement = engagement
-            latest_item.founder_response = reply_text
-            latest_item.reply_analysis = analysis_dict
-
-            # Serialize before commit to prevent SQLAlchemy expiration
-            context_item = DailyItemResponse.model_validate(latest_item)
-            await db.commit()
-
-            if analysis.new_question_asked:
-                top_domains_objs = (await db.execute(select(InterestVector).order_by(InterestVector.weight.desc()).limit(5))).scalars().all()
-                top_domains = [td.domain for td in top_domains_objs]
-
-                chat = SeekChat(context_item=context_item, top_domains=top_domains)
-                response_text = await asyncio.to_thread(chat.send_message, reply_text)
-                context.user_data['seek_chat'] = chat
-
-                await message.reply_text(response_text)
-            else:
-                await message.reply_text("Your insights have been logged. The Forge adjusts.")
+        await message.reply_text(response_text)
 
 
 
@@ -378,6 +322,21 @@ async def post_init(application: Application):
     scheduler.add_job(scheduled_forge, 'cron', hour=8, minute=0)
     scheduler.start()
     print("⏰ Daily Forge Scheduler started for 8:00 AM IST")
+    
+    from telegram import BotCommand
+    commands = [
+        BotCommand("strategize", "Ingest URL to Neutral Brick"),
+        BotCommand("focus", "Set temporary focus"),
+        BotCommand("unfocus", "Clear focus"),
+        BotCommand("lens", "Apply a lens to a replied brick"),
+        BotCommand("lens_architect", "Apply architect lens"),
+        BotCommand("lens_growth", "Apply growth lens"),
+        BotCommand("lens_redteam", "Apply redteam lens"),
+        BotCommand("lens_validator", "Apply validator lens"),
+        BotCommand("lens_first_principles", "Apply first_principles lens"),
+    ]
+    await application.bot.set_my_commands(commands)
+
 
 
 
@@ -439,6 +398,157 @@ async def handle_document(update: Update, context: ContextTypes.DEFAULT_TYPE):
         logger.error(f"Failed to process document {file_name}: {e}")
         await update.message.reply_text(f"❌ Failed to ingest document {file_name}:\n{str(e)[:200]}")
 
+async def handle_focus(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    message = update.message
+    if not message: return
+    
+    parts = message.text.split(maxsplit=1)
+    if len(parts) < 2:
+        await message.reply_text("Please provide a goal. Usage: /focus [goal]")
+        return
+        
+    goal = parts[1]
+    if goal.lower() == "clear":
+        chat_id = message.chat_id
+        if chat_id in active_focus:
+            del active_focus[chat_id]
+        await message.reply_text("🌐 **Focus cleared.** Returning to primary mission directive.", parse_mode=ParseMode.MARKDOWN)
+        return
+
+    chat_id = message.chat_id
+    active_focus[chat_id] = {
+        "goal": goal,
+        "expires_at": datetime.now() + timedelta(minutes=15)
+    }
+    await message.reply_text(f"🎯 **Focus locked:** {goal}. I am now prioritizing this above my general mission. Type `/unfocus` to reset.", parse_mode=ParseMode.MARKDOWN)
+
+async def handle_unfocus(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    message = update.message
+    if not message: return
+    
+    chat_id = message.chat_id
+    if chat_id in active_focus:
+        del active_focus[chat_id]
+        
+    await message.reply_text("🌐 **Focus cleared.** Returning to primary mission directive.", parse_mode=ParseMode.MARKDOWN)
+
+async def handle_strategize(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    message = update.message
+    if not message: return
+    
+    args = context.args
+    if not args:
+        await message.reply_text("Usage: /strategize <URL>")
+        return
+        
+    url = args[0]
+        
+    chat_id = message.chat_id
+    focus = None
+    
+    if chat_id in active_focus:
+        focus_data = active_focus[chat_id]
+        if datetime.now() > focus_data["expires_at"]:
+            del active_focus[chat_id]
+        else:
+            focus = focus_data["goal"]
+            
+    url_content = f"Mock content for {url}"
+    
+    from src.synthesis.strategy_generator import DualLayerContextEngine
+    engine = DualLayerContextEngine()
+    
+    strategy = await engine.generate_strategy(url_content, focus)
+    
+    await message.reply_text(str(strategy))
+
+async def handle_lens(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    message = update.message
+    if not message: return
+    
+    if not message.reply_to_message or not message.reply_to_message.text:
+        await message.reply_text("You must reply to a message containing a Neutral Brick.")
+        return
+        
+    brick_text = message.reply_to_message.text
+    text = message.text
+    command = text.split()[0].lower()
+    
+    lens_name = ""
+    if command == "/lens":
+        args = context.args
+        if not args:
+            await message.reply_text("Usage: /lens <lens_name> or /lens_<lens_name>")
+            return
+        lens_name = args[0].lower()
+    elif command.startswith("/lens_"):
+        lens_name = command.replace("/lens_", "")
+    else:
+        return
+        
+    chat_id = message.chat_id
+    focus = None
+    if chat_id in active_focus:
+        focus_data = active_focus[chat_id]
+        if datetime.now() > focus_data["expires_at"]:
+            del active_focus[chat_id]
+        else:
+            focus = focus_data["goal"]
+            
+    from src.synthesis.strategy_generator import DualLayerContextEngine
+    engine = DualLayerContextEngine()
+    
+    response = await engine.apply_lens(brick_text, lens_name, focus)
+    if response:
+        await message.reply_text(response)
+    else:
+        await message.reply_text("Failed to apply lens.")
+
+async def handle_callback_query(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    await query.answer()
+
+    data = query.data
+    if data.startswith("lens:"):
+        parts = data.split(":")
+        if len(parts) == 3:
+            _, lens_name, brick_id = parts
+            
+            async with SessionLocal() as db:
+                from src.db.models import NeutralBrick
+                import uuid
+                try:
+                    b_id = uuid.UUID(brick_id)
+                except ValueError:
+                    await context.bot.send_message(chat_id=query.message.chat_id, text="Invalid Brick ID.")
+                    return
+                brick = (await db.execute(select(NeutralBrick).filter(NeutralBrick.id == b_id))).scalars().first()
+                
+            if not brick:
+                await context.bot.send_message(chat_id=query.message.chat_id, text="Brick not found.")
+                return
+
+            pointers = "\n".join([f"- {p}" for p in brick.critical_pointers]) if brick.critical_pointers else "None"
+            brick_text = f"🧱 Neutral Brick\n\nCore Thesis:\n{brick.core_thesis}\n\nMechanics:\n{brick.key_mechanics}\n\nPointers:\n{pointers}"
+            
+            chat_id = query.message.chat_id
+            focus = None
+            if chat_id in active_focus:
+                focus_data = active_focus[chat_id]
+                if datetime.now() > focus_data["expires_at"]:
+                    del active_focus[chat_id]
+                else:
+                    focus = focus_data["goal"]
+
+            from src.synthesis.strategy_generator import DualLayerContextEngine
+            engine = DualLayerContextEngine()
+            
+            response = await engine.apply_lens(brick_text, lens_name, focus)
+            if response:
+                await context.bot.send_message(chat_id=chat_id, text=response)
+            else:
+                await context.bot.send_message(chat_id=chat_id, text="Failed to apply lens.")
+
 def main():
     token = settings.telegram_bot_token
     if not token:
@@ -460,6 +570,18 @@ def main():
     application.add_handler(MessageReactionHandler(handle_reaction))
     application.add_handler(CommandHandler("forge", handle_forge))
     application.add_handler(CommandHandler("end", handle_end))
+    application.add_handler(CommandHandler("focus", handle_focus))
+    application.add_handler(CommandHandler("unfocus", handle_unfocus))
+    application.add_handler(CommandHandler("strategize", handle_strategize))
+    
+    application.add_handler(CommandHandler("lens", handle_lens))
+    application.add_handler(CommandHandler("lens_architect", handle_lens))
+    application.add_handler(CommandHandler("lens_growth", handle_lens))
+    application.add_handler(CommandHandler("lens_redteam", handle_lens))
+    application.add_handler(CommandHandler("lens_validator", handle_lens))
+    application.add_handler(CommandHandler("lens_first_principles", handle_lens))
+    
+    application.add_handler(CallbackQueryHandler(handle_callback_query))
 
     application.post_init = post_init
 
@@ -469,3 +591,4 @@ def main():
 
 if __name__ == '__main__':
     main()
+

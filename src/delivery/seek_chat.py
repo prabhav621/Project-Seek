@@ -40,6 +40,8 @@ class SeekChat:
             prompt_context = f"Quote: '{self.context_item.quote_text}' - {self.context_item.quote_author}\nMirror Question Asked: {self.context_item.mirror_question}"
         elif self.context_item.item_type == 'inversion':
             prompt_context = f"Inversion Exercise: {self.context_item.inversion_prompt}"
+        elif self.context_item.item_type == 'custom':
+            prompt_context = self.context_item.context
         else:
             prompt_context = f"Context: {self.context_item.context}"
             
