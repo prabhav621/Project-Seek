@@ -39,8 +39,8 @@ async def run_backfill():
             print(f"[{idx}/{total_items}] Processing Item {item.id}...")
             
             try:
-                # Use FAST_CREATIVE node to extract the brick
-                brick_dict = await engine.generate_strategy(item.raw_text[:8000]) 
+                # Extract Neutral Brick using full article text for complete synthesis
+                brick_dict = await engine.generate_strategy(item.raw_text) 
                 
                 if brick_dict:
                     new_brick = NeutralBrick(
@@ -59,9 +59,9 @@ async def run_backfill():
                 print(f"  -> Error processing item: {e}")
                 await db.rollback()
             
-            # Rate Limiting: await asyncio.sleep instead of time.sleep so we don't block the async loop
-            print("  -> Sleeping 15 seconds to respect rate limits...")
-            await asyncio.sleep(15)
+            # Rate Limiting: 8 seconds is optimal for Google Free Tier & NIM
+            print("  -> Sleeping 8 seconds before next item...")
+            await asyncio.sleep(8)
             
     print("Backfill Complete!")
 
