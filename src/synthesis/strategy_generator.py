@@ -108,7 +108,7 @@ ALL insights MUST be strictly mapped and constrained to accelerating THIS specif
         ]
 
         try:
-            raw_response = await generate_completion_async(Tier.LITE.value, messages=messages, temperature=0.2)
+            raw_response = await generate_completion_async(Tier.FLASH.value, messages=messages, temperature=0.2)
             parsed = parse_neutral_brick(raw_response)
             return parsed
         except Exception as e:

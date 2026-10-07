@@ -63,6 +63,11 @@ def _get_cascade_sequence(target: str) -> List[Tuple[str, int, str]]:
             slug = f"openrouter/{m['id']}" if not m['id'].startswith("openrouter/") else m['id']
             sequence.append((slug, 25, f"OpenRouter (Free Heavy #{i+1}: {m['name']})"))
             
+        # Paid Frontier Reasoning Fallbacks (Protected by $1 Key Spending Limit)
+        sequence.append(("openrouter/deepseek/deepseek-r1", 45, "OpenRouter (DeepSeek R1 Paid)"))
+        sequence.append(("openrouter/anthropic/claude-3.5-sonnet", 30, "OpenRouter (Claude 3.5 Sonnet Paid)"))
+        sequence.append(("openrouter/meta-llama/llama-3.1-70b-instruct", 25, "OpenRouter (Llama 3.1 70B Paid)"))
+        
         # Cloudflare Edge Safety Net
         sequence.append(("cloudflare/@cf/meta/llama-3.3-70b-instruct", 20, "Cloudflare (Llama 3.3 70B)"))
         sequence.append(("cloudflare/@cf/meta/llama-3-8b-instruct", 15, "Cloudflare (Llama 3 8B Safety Net)"))
@@ -82,6 +87,10 @@ def _get_cascade_sequence(target: str) -> List[Tuple[str, int, str]]:
             slug = f"openrouter/{m['id']}" if not m['id'].startswith("openrouter/") else m['id']
             sequence.append((slug, 15, f"OpenRouter (Free Flash #{i+1}: {m['name']})"))
             
+        # Ultra-Cheap Paid Flash Fallbacks (Protected by $1 Key Spending Limit)
+        sequence.append(("openrouter/google/gemini-2.5-flash", 15, "OpenRouter (Gemini 2.5 Flash Paid)"))
+        sequence.append(("openrouter/meta-llama/llama-3.1-8b-instruct", 15, "OpenRouter (Llama 3.1 8B Paid)"))
+            
         sequence.append(("cloudflare/@cf/meta/llama-3.1-8b-instruct", 12, "Cloudflare (Llama 3.1 8B)"))
         return sequence
 
@@ -97,6 +106,9 @@ def _get_cascade_sequence(target: str) -> List[Tuple[str, int, str]]:
         for i, m in enumerate(free_flash):
             slug = f"openrouter/{m['id']}" if not m['id'].startswith("openrouter/") else m['id']
             sequence.append((slug, 15, f"OpenRouter (Free Lite #{i+1}: {m['name']})"))
+            
+        # Ultra-Cheap Paid Lite Fallback
+        sequence.append(("openrouter/google/gemini-2.5-flash", 15, "OpenRouter (Gemini 2.5 Flash Paid)"))
             
         sequence.append(("cloudflare/@cf/meta/llama-3.1-8b-instruct", 12, "Cloudflare (Llama 3.1 8B Plain-Text)"))
         return sequence
