@@ -95,9 +95,20 @@ IMPORTANT: Because Focus State is active, you MUST strictly prepend your output 
                 
                 content = response.choices[0].message.content
                 if isinstance(content, str):
-                    if content.strip().startswith("[❗️ Focus State]"):
-                        content = content.replace("[❗️ Focus State]", "", 1).strip()
-                    return json.loads(content)
+                    if 'Focus State' in content:
+                        content = content.split(']', 1)[-1].strip()
+                    content = content.strip()
+                    if content.startswith('`json'): content = content[7:]
+                    elif content.startswith('`'): content = content[3:]
+                    if content.endswith('`'): content = content[:-3]
+                    content = content.strip()
+                    import json, re
+                    try:
+                        return json.loads(content)
+                    except json.JSONDecodeError:
+                        match = re.search(r'\{.*\}', content, re.DOTALL)
+                        if match: return json.loads(match.group(0))
+                        raise
                 else:
                     return content # Already parsed dict
 
@@ -105,7 +116,7 @@ IMPORTANT: Because Focus State is active, you MUST strictly prepend your output 
                 logger.warning(f"Model {model_id} failed: {str(e)}. Failing over...")
                 continue
                 
-        logger.error("All models in the DEEP_REASONING pool failed.")
+        logger.error("All models in the FAST_CREATIVE pool failed.")
         return None
 
     async def apply_lens(self, brick_text: str, lens_name: str, focus_state: Optional[str] = None) -> Optional[str]:
