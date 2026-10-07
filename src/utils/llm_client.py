@@ -63,11 +63,6 @@ def _get_cascade_sequence(target: str) -> List[Tuple[str, int, str]]:
             slug = f"openrouter/{m['id']}" if not m['id'].startswith("openrouter/") else m['id']
             sequence.append((slug, 25, f"OpenRouter (Free Heavy #{i+1}: {m['name']})"))
             
-        # Paid / Frontier Fallbacks (Active when wallet is funded)
-        sequence.append(("openrouter/deepseek/deepseek-r1", 45, "OpenRouter (DeepSeek R1)"))
-        sequence.append(("openrouter/anthropic/claude-3.5-sonnet", 30, "OpenRouter (Claude 3.5 Sonnet)"))
-        sequence.append(("openrouter/meta-llama/llama-3.1-70b-instruct", 25, "OpenRouter (Llama 3.1 70B)"))
-        
         # Cloudflare Edge Safety Net
         sequence.append(("cloudflare/@cf/meta/llama-3.3-70b-instruct", 20, "Cloudflare (Llama 3.3 70B)"))
         sequence.append(("cloudflare/@cf/meta/llama-3-8b-instruct", 15, "Cloudflare (Llama 3 8B Safety Net)"))
