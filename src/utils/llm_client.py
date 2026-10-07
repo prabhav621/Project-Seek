@@ -53,8 +53,7 @@ def _get_cascade_sequence(target: str) -> List[Tuple[str, int, str]]:
     # ─── 1. PRO TIER: Deep Reasoning ───
     if target in [Tier.PRO.value, ModelTier.PRO_PRIMARY.value, "pro"]:
         sequence = [
-            ("nvidia_nim/nvidia/nemotron-3-ultra-550b-a55b", 45, "NVIDIA NIM (Nemotron 550B)"),
-            ("nvidia_nim/meta/llama-3.3-70b-instruct", 35, "NVIDIA NIM (Llama 3.3 70B)")
+            ("nvidia_nim/nvidia/nemotron-3-ultra-550b-a55b", 45, "NVIDIA NIM (Nemotron 550B)")
         ]
         
         # Dynamic OpenRouter Free Reasoning Sweepers (>= 70B)
