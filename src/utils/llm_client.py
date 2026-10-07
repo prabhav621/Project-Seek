@@ -75,38 +75,38 @@ def _get_cascade_sequence(target: str) -> List[Tuple[str, int, str]]:
     # ─── 2. FLASH TIER: User-Facing Chat, Brick Interrogation, Quick Katas ───
     elif target in [Tier.FLASH.value, ModelTier.FLASH.value, "flash"]:
         sequence = [
-            ("gemini/gemini-3.5-flash-lite", 15, "Gemini 3.5 Flash Lite (500 RPD)"),
-            ("gemini/gemini-3.1-flash-lite", 15, "Gemini 3.1 Flash Lite (500 RPD)")
+            ("gemini/gemini-3.5-flash-lite", 60, "Gemini 3.5 Flash Lite (500 RPD)"),
+            ("gemini/gemini-3.1-flash-lite", 60, "Gemini 3.1 Flash Lite (500 RPD)")
         ]
         
         # Dynamic OpenRouter Free Flash Sweepers (< 70B)
         free_flash = get_top_free_flash_models(limit=2)
         for i, m in enumerate(free_flash):
             slug = f"openrouter/{m['id']}" if not m['id'].startswith("openrouter/") else m['id']
-            sequence.append((slug, 15, f"OpenRouter (Free Flash #{i+1}: {m['name']})"))
+            sequence.append((slug, 45, f"OpenRouter (Free Flash #{i+1}: {m['name']})"))
             
         # Ultra-Cheap Paid Flash Fallbacks (Protected by $1 Key Spending Limit)
-        sequence.append(("openrouter/meta-llama/llama-3.1-8b-instruct", 15, "OpenRouter (Llama 3.1 8B Paid)"))
+        sequence.append(("openrouter/meta-llama/llama-3.1-8b-instruct", 30, "OpenRouter (Llama 3.1 8B Paid)"))
             
-        sequence.append(("cloudflare/@cf/meta/llama-3.1-8b-instruct", 12, "Cloudflare (Llama 3.1 8B)"))
+        sequence.append(("cloudflare/@cf/meta/llama-3.1-8b-instruct", 30, "Cloudflare (Llama 3.1 8B)"))
         return sequence
 
     # ─── 3. LITE TIER: Bulk Ingestion, Backfill, Tagging, Subtitles, Hooks ───
     elif target in [Tier.LITE.value, ModelTier.FLASH_LITE.value, "lite"]:
         sequence = [
-            ("gemini/gemini-3.5-flash-lite", 15, "Gemini 3.5 Flash Lite (Bulk Slot 1)"),
-            ("gemini/gemini-3.1-flash-lite", 15, "Gemini 3.1 Flash Lite (Bulk Slot 2)")
+            ("gemini/gemini-3.5-flash-lite", 60, "Gemini 3.5 Flash Lite (Bulk Slot 1)"),
+            ("gemini/gemini-3.1-flash-lite", 60, "Gemini 3.1 Flash Lite (Bulk Slot 2)")
         ]
         
         free_flash = get_top_free_flash_models(limit=2)
         for i, m in enumerate(free_flash):
             slug = f"openrouter/{m['id']}" if not m['id'].startswith("openrouter/") else m['id']
-            sequence.append((slug, 15, f"OpenRouter (Free Lite #{i+1}: {m['name']})"))
+            sequence.append((slug, 45, f"OpenRouter (Free Lite #{i+1}: {m['name']})"))
             
         # Ultra-Cheap Paid Lite Fallback
-        sequence.append(("openrouter/meta-llama/llama-3.1-8b-instruct", 15, "OpenRouter (Llama 3.1 8B Paid)"))
+        sequence.append(("openrouter/meta-llama/llama-3.1-8b-instruct", 30, "OpenRouter (Llama 3.1 8B Paid)"))
             
-        sequence.append(("cloudflare/@cf/meta/llama-3.1-8b-instruct", 12, "Cloudflare (Llama 3.1 8B Plain-Text)"))
+        sequence.append(("cloudflare/@cf/meta/llama-3.1-8b-instruct", 30, "Cloudflare (Llama 3.1 8B Plain-Text)"))
         return sequence
 
     # Direct explicit model passthrough
