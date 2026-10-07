@@ -2,8 +2,9 @@ import litellm
 import logging
 import os
 import time
-from src.config import settings, ModelTier
-from src.utils.dynamic_router import get_top_free_models
+from typing import List, Tuple, Optional
+from src.config import settings, Tier, ModelTier
+from src.utils.dynamic_router import get_top_free_reasoning_models, get_top_free_flash_models
 
 logger = logging.getLogger(__name__)
 
@@ -13,8 +14,13 @@ if settings.cloudflare_api_key:
 if settings.cloudflare_account_id:
     os.environ["CLOUDFLARE_ACCOUNT_ID"] = settings.cloudflare_account_id
 
-def _apply_provider_kwargs(kwargs, target_model):
-    # Clear out leftover routing parameters from previous fallback attempts
+# Global flags for litellm safety
+litellm.drop_params = True
+litellm.suppress_debug_info = True
+
+def _apply_provider_kwargs(kwargs: dict, target_model: str) -> dict:
+    """Configures credentials, headers, and model-specific parameters."""
+    kwargs = kwargs.copy()
     if "api_base" in kwargs:
         del kwargs["api_base"]
     if "extra_body" in kwargs:
@@ -23,72 +29,95 @@ def _apply_provider_kwargs(kwargs, target_model):
     if "gemini" in target_model:
         kwargs["api_key"] = settings.gemini_api_key
 
-    # NVIDIA NIM
     elif "nvidia_nim" in target_model:
         kwargs["api_key"] = settings.nvidia_api_key
-        # Special configuration for Nemotron to enable reasoning tokens
         if "nemotron-3-ultra" in target_model:
             kwargs["extra_body"] = {"chat_template_kwargs": {"enable_thinking": True}}
             
-    # OPENROUTER
     elif "openrouter" in target_model:
         kwargs["api_key"] = settings.openrouter_api_key
-        # Highly recommended to prevent unannounced blocking
         kwargs["extra_headers"] = {
             "HTTP-Referer": "https://github.com/prabhav621/Project-Seek",
             "X-Title": "Project Seek"
         }
         
-    # CLOUDFLARE
     elif "cloudflare" in target_model:
-        pass
+        kwargs["api_key"] = settings.cloudflare_api_key
 
     return kwargs
 
-def _get_cascade_sequence(target_model):
-    if target_model == ModelTier.PRO_PRIMARY.value:
-        # Slot 1: Static Primary
+def _get_cascade_sequence(target: str) -> List[Tuple[str, int, str]]:
+    """
+    Returns ordered (model_slug, timeout_seconds, human_label) cascade for a Tier or specific model.
+    """
+    # ─── 1. PRO TIER: Deep Reasoning ───
+    if target in [Tier.PRO.value, ModelTier.PRO_PRIMARY.value, "pro"]:
         sequence = [
-            (ModelTier.PRO_PRIMARY.value, 45, "Nvidia NIM (Nemotron 550B)")
+            ("nvidia_nim/nvidia/nemotron-3-ultra-550b-a55b", 45, "NVIDIA NIM (Nemotron 550B)"),
+            ("nvidia_nim/meta/llama-3.1-70b-instruct", 35, "NVIDIA NIM (Llama 3.1 70B)")
         ]
         
-        # Slots 2, 3, 4: Dynamic OpenRouter Sweepers
-        dynamic_models = get_top_free_models(limit=3)
-        for i, m in enumerate(dynamic_models):
-            # LiteLLM format for openrouter is openrouter/model_id
-            slug = f"openrouter/{m['id']}"
-            name = f"OpenRouter (Dynamic #{i+1}: {m['name']} | {m['params']}B)"
-            # Asymmetric Timeout: 20s for highly congested dynamic models
-            sequence.append((slug, 20, name))
+        # Dynamic OpenRouter Free Reasoning Sweepers (>= 70B)
+        free_reasoners = get_top_free_reasoning_models(limit=2)
+        for i, m in enumerate(free_reasoners):
+            slug = f"openrouter/{m['id']}" if not m['id'].startswith("openrouter/") else m['id']
+            sequence.append((slug, 25, f"OpenRouter (Free Heavy #{i+1}: {m['name']})"))
             
-        # Slot 5: Static Safety Net
-        sequence.append(
-            (ModelTier.PRO_SAFETY_NET.value, 15, "Cloudflare (Llama 3 8B)")
-        )
+        # Paid / Frontier Fallbacks (Active when wallet is funded)
+        sequence.append(("openrouter/deepseek/deepseek-r1", 45, "OpenRouter (DeepSeek R1)"))
+        sequence.append(("openrouter/anthropic/claude-3.5-sonnet", 30, "OpenRouter (Claude 3.5 Sonnet)"))
+        sequence.append(("openrouter/meta-llama/llama-3.1-70b-instruct", 25, "OpenRouter (Llama 3.1 70B)"))
         
-        # Slot 6: Doomsday Fallback
-        sequence.append(
-            (ModelTier.FLASH.value, 15, "Gemini Flash (Doomsday Fallback)")
-        )
+        # Cloudflare Edge Safety Net
+        sequence.append(("cloudflare/@cf/meta/llama-3.3-70b-instruct", 20, "Cloudflare (Llama 3.3 70B)"))
+        sequence.append(("cloudflare/@cf/meta/llama-3-8b-instruct", 15, "Cloudflare (Llama 3 8B Safety Net)"))
         return sequence
+
+    # ─── 2. FLASH TIER: User-Facing Chat, Brick Interrogation, Quick Katas ───
+    elif target in [Tier.FLASH.value, ModelTier.FLASH.value, "flash"]:
+        sequence = [
+            ("gemini/gemini-3.5-flash-lite", 15, "Gemini 3.5 Flash Lite (500 RPD)"),
+            ("gemini/gemini-3.1-flash-lite", 15, "Gemini 3.1 Flash Lite (500 RPD)"),
+            ("nvidia_nim/meta/llama-3.1-8b-instruct", 15, "NVIDIA NIM (Llama 3.1 8B)")
+        ]
         
-    return [(target_model, 30, target_model)]
+        # Dynamic OpenRouter Free Flash Sweepers (< 70B)
+        free_flash = get_top_free_flash_models(limit=2)
+        for i, m in enumerate(free_flash):
+            slug = f"openrouter/{m['id']}" if not m['id'].startswith("openrouter/") else m['id']
+            sequence.append((slug, 15, f"OpenRouter (Free Flash #{i+1}: {m['name']})"))
+            
+        sequence.append(("cloudflare/@cf/meta/llama-3.1-8b-instruct", 12, "Cloudflare (Llama 3.1 8B)"))
+        return sequence
+
+    # ─── 3. LITE TIER: Bulk Ingestion, Backfill, Tagging, Subtitles, Hooks ───
+    elif target in [Tier.LITE.value, ModelTier.FLASH_LITE.value, "lite"]:
+        sequence = [
+            ("gemini/gemini-3.5-flash-lite", 15, "Gemini 3.5 Flash Lite (Bulk Slot 1)"),
+            ("gemini/gemini-3.1-flash-lite", 15, "Gemini 3.1 Flash Lite (Bulk Slot 2)"),
+            ("nvidia_nim/meta/llama-3.1-8b-instruct", 15, "NVIDIA NIM (Llama 3.1 8B)"),
+        ]
+        
+        free_flash = get_top_free_flash_models(limit=2)
+        for i, m in enumerate(free_flash):
+            slug = f"openrouter/{m['id']}" if not m['id'].startswith("openrouter/") else m['id']
+            sequence.append((slug, 15, f"OpenRouter (Free Lite #{i+1}: {m['name']})"))
+            
+        sequence.append(("cloudflare/@cf/meta/llama-3.1-8b-instruct", 12, "Cloudflare (Llama 3.1 8B Plain-Text)"))
+        return sequence
+
+    # Direct explicit model passthrough
+    return [(target, 30, target)]
 
 def generate_completion_sync(model: str, messages: list = None, **kwargs) -> str:
     """
-    Synchronous completion with 5-Slot cascade.
-    Accepts either:
-      - messages: list of {"role": ..., "content": ...} dicts (direct callers)
-      - contents: str (retry.py adapter pattern, auto-converted to messages)
-    Additional kwargs: system_instruction, temperature, json_mode
+    Synchronous completion with unified cascade and 402 circuit breaker.
     """
-    # ─── Adapter: convert 'contents' string to messages list ───
     if messages is None:
         messages = []
     contents = kwargs.pop("contents", None)
     system_instruction = kwargs.pop("system_instruction", None)
     temperature = kwargs.pop("temperature", None)
-    json_mode = kwargs.pop("json_mode", False)
 
     if contents and not messages:
         messages = [{"role": "user", "content": str(contents)}]
@@ -100,38 +129,42 @@ def generate_completion_sync(model: str, messages: list = None, **kwargs) -> str
     cascade = _get_cascade_sequence(model)
 
     if "max_tokens" not in kwargs:
-        kwargs["max_tokens"] = 2048
+        # Default safety limit: PRO gets 4096, others get 1500 to protect in-flight budget
+        kwargs["max_tokens"] = 4096 if "pro" in str(model).lower() else 1500
+
+    skip_openrouter = False
 
     for model_str, timeout_sec, name in cascade:
-        kwargs = _apply_provider_kwargs(kwargs, model_str)
+        if skip_openrouter and "openrouter" in model_str:
+            continue
+
+        call_kwargs = _apply_provider_kwargs(kwargs, model_str)
         try:
-            # Sync throttle: prevents rate limit violations.
-            # Safe because sync callers run inside asyncio.to_thread().
-            time.sleep(4.0)
-            print(f"\n📡 Sending request to {name} [Timeout: {timeout_sec}s]...")
+            logger.info(f"Routing sync to {name} [{model_str}]...")
             response = litellm.completion(
                 model=model_str,
                 messages=messages,
                 drop_params=True,
                 timeout=timeout_sec,
-                **kwargs
+                **call_kwargs
             )
             return response.choices[0].message.content
         except Exception as e:
-            print(f"❌ {name} failed: {e}")
-            logger.warning(f"{name} failed: {e}")
+            err_str = str(e)
+            logger.warning(f"Model {name} ({model_str}) failed: {err_str}. Failing over...")
+            
+            # Circuit breaker: if OpenRouter is out of credits (402), skip all remaining OpenRouter models
+            if "402" in err_str or "openrouter_credits" in err_str:
+                logger.warning("OpenRouter 402/insufficient credits detected. Tripping circuit breaker for this request.")
+                skip_openrouter = True
             continue
 
-    error_msg = "FATAL ERROR: All cascade slots exhausted."
-    print(f"❌ {error_msg}")
-    raise RuntimeError(error_msg)
+    raise RuntimeError(f"FATAL: All cascade slots exhausted for target tier: {model}")
 
 async def generate_completion_async(model: str, messages: list = None, **kwargs) -> str:
     """
-    Async completion with 5-Slot cascade.
-    Accepts both messages (list) and contents (str) patterns.
+    Asynchronous completion with unified cascade and 402 circuit breaker.
     """
-    # ─── Adapter: convert 'contents' string to messages list ───
     if messages is None:
         messages = []
     contents = kwargs.pop("contents", None)
@@ -148,34 +181,31 @@ async def generate_completion_async(model: str, messages: list = None, **kwargs)
     cascade = _get_cascade_sequence(model)
 
     if "max_tokens" not in kwargs:
-        kwargs["max_tokens"] = 2048
+        kwargs["max_tokens"] = 4096 if "pro" in str(model).lower() else 1500
+
+    skip_openrouter = False
 
     for model_str, timeout_sec, name in cascade:
-        kwargs = _apply_provider_kwargs(kwargs, model_str)
+        if skip_openrouter and "openrouter" in model_str:
+            continue
+
+        call_kwargs = _apply_provider_kwargs(kwargs, model_str)
         try:
-            logger.info(f"Async request to {name} [Timeout: {timeout_sec}s]...")
+            logger.info(f"Routing async to {name} [{model_str}]...")
             response = await litellm.acompletion(
                 model=model_str,
                 messages=messages,
                 drop_params=True,
                 timeout=timeout_sec,
-                **kwargs
+                **call_kwargs
             )
             return response.choices[0].message.content
         except Exception as e:
-            logger.warning(f"Async {name} failed: {e}")
+            err_str = str(e)
+            logger.warning(f"Async {name} ({model_str}) failed: {err_str}. Failing over...")
+            if "402" in err_str or "openrouter_credits" in err_str:
+                logger.warning("OpenRouter 402/insufficient credits detected. Tripping circuit breaker for this request.")
+                skip_openrouter = True
             continue
 
-    raise RuntimeError("Async FATAL ERROR: All cascade slots exhausted.")
-
-
-def generate_chat_sync(model: str, messages: list, system_instruction: str = None, temperature: float = 0.7) -> str:
-    """
-    Synchronous multi-turn chat wrapper. Accepts a full message history list
-    and optional system instruction, then routes through the 5-Slot cascade.
-    Used by SeekChat for Socratic dialogue.
-    """
-    if system_instruction:
-        messages = [{"role": "system", "content": system_instruction}] + messages
-    return generate_completion_sync(model, messages, temperature=temperature)
-
+    raise RuntimeError(f"Async FATAL: All cascade slots exhausted for target tier: {model}")

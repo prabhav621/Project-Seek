@@ -27,7 +27,6 @@ from sqlalchemy import select
 from src.db.models import DailyItem, InterestVector
 from src.intelligence.reply_analyzer import ReplyAnalyzer
 from src.intelligence.drift_engine import update_drift
-from src.delivery.seek_chat import SeekChat
 from src.models import DailyItemResponse
 
 # Global ingestion queue to serialize all playlist/batch work
@@ -254,96 +253,50 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not message or not message.text:
         return
 
-    chat = context.user_data.get('seek_chat')
-    if chat and not chat.is_finished:
-        response_text = await asyncio.to_thread(chat.send_message, message.text)
-        await message.reply_text(response_text)
+    chat_id = message.chat_id
+    focus = None
+    if chat_id in active_focus:
+        focus_data = active_focus[chat_id]
+        from datetime import datetime
+        if datetime.now() > focus_data['expires_at']:
+            del active_focus[chat_id]
+        else:
+            focus = focus_data['goal']
 
-        if chat.is_finished:
-            summary = await asyncio.to_thread(chat.summarize_conversation)
+    from src.synthesis.strategy_generator import DualLayerContextEngine
+    engine = DualLayerContextEngine()
 
-            async with SessionLocal() as db:
-                for topic in summary.domain_shifts:
-                    matched_domain = (await db.execute(select(InterestVector).filter(InterestVector.domain == topic))).scalars().first()
-                    if matched_domain:
-                        matched_domain.weight = min(1.0, matched_domain.weight + 0.05)
-                await db.commit()
-
-            context.user_data['seek_chat'] = None
-            await message.reply_text(f"[Seek Chat Concluded]\nSummary: {summary.summary}")
-        return
-
+    # 1. CONTEXTUAL BRICK / BOT MESSAGE SPARRING (User replied to a message from the bot)
     if message.reply_to_message and message.reply_to_message.from_user.id == context.bot.id:
-        original_item_text = message.reply_to_message.text
-        reply_text = message.text
+        original_text = message.reply_to_message.text or ""
+        user_query = message.text
+        processing_msg = await message.reply_text("🤔 Thinking with you...")
 
-        if "?? **Core Thesis:**" in original_item_text or "Core Thesis:" in original_item_text:
-            processing_msg = await message.reply_text("?? Analyzing your question against the Brick...")
-            
-            chat_id = message.chat_id
-            focus = None
-            if chat_id in active_focus:
-                focus_data = active_focus[chat_id]
-                from datetime import datetime
-                if datetime.now() > focus_data['expires_at']:
-                    del active_focus[chat_id]
-                else:
-                    focus = focus_data['goal']
-            
-            try:
-                from src.synthesis.strategy_generator import DualLayerContextEngine
-                engine = DualLayerContextEngine()
-                insight = await engine.ask_brick(original_item_text, reply_text, focus)
-                output = f"?? **Insight:**\n\n{insight}"
-                if focus:
-                    output = f"[?? Focus State: {focus}]\n\n" + output
-                await processing_msg.edit_text(output, parse_mode='Markdown')
-            except Exception as e:
-                await processing_msg.edit_text(f"Failed to analyze brick: {e}")
-            return
-
-        from src.models import DailyItemResponse
-        context_item = DailyItemResponse(item_type="custom", context=message.reply_to_message.text)
-        
-        async with SessionLocal() as db:
-            top_domains_objs = (await db.execute(select(InterestVector).order_by(InterestVector.weight.desc()).limit(5))).scalars().all()
-            top_domains = [td.domain for td in top_domains_objs]
-
-        chat = SeekChat(context_item=context_item, top_domains=top_domains)
-        response_text = await asyncio.to_thread(chat.send_message, reply_text)
-        context.user_data['seek_chat'] = chat
-
-        await message.reply_text(response_text)
-
-    else:
-        # LIBRARIAN (REVERSE RAG) FEATURE
-        query = message.text
-        processing_msg = await message.reply_text('📚 Searching your knowledge base...')
-        
-        chat_id = message.chat_id
-        focus = None
-        if chat_id in active_focus:
-            focus_data = active_focus[chat_id]
-            from datetime import datetime
-            if datetime.now() > focus_data['expires_at']:
-                del active_focus[chat_id]
-            else:
-                focus = focus_data['goal']
-                
         try:
-            from src.synthesis.strategy_generator import DualLayerContextEngine
-            engine = DualLayerContextEngine()
-            
-            async with SessionLocal() as db:
-                insight = await engine.run_librarian(query, db, focus)
-                
-            output = f'📚 **The Librarian Says:**\n\n{insight}'
+            insight = await engine.ask_brick(original_text, user_query, focus)
+            output = f"🧠 **Insight:**\n\n{insight}"
             if focus:
-                output = f'[❗️ Focus State: {focus}]\n\n' + output
-                
+                output = f"[❗️ Focus State: {focus}]\n\n" + output
             await processing_msg.edit_text(output, parse_mode='Markdown')
         except Exception as e:
-            await processing_msg.edit_text(f'Librarian search failed: {e}')
+            await processing_msg.edit_text(f"Could not process reply: {e}")
+        return
+
+    # 2. RAW MESSAGE -> REVERSE RAG / LIBRARIAN
+    query = message.text
+    processing_msg = await message.reply_text("📚 Searching your knowledge base...")
+
+    try:
+        async with SessionLocal() as db:
+            insight = await engine.run_librarian(query, db, focus)
+
+        output = f"📚 **The Librarian Says:**\n\n{insight}"
+        if focus:
+            output = f"[❗️ Focus State: {focus}]\n\n" + output
+
+        await processing_msg.edit_text(output, parse_mode='Markdown')
+    except Exception as e:
+        await processing_msg.edit_text(f"Librarian search failed: {e}")
 
 
 
@@ -399,25 +352,12 @@ async def post_init(application: Application):
 
 
 async def handle_end(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    chat = context.user_data.get('seek_chat')
-    if not chat or chat.is_finished:
-        await update.message.reply_text("No active Seek Chat session to end.")
-        return
-        
-    await update.message.reply_text("Closing session and analyzing conversation...")
-    chat.is_finished = True
-    
-    summary = await asyncio.to_thread(chat.summarize_conversation)
-    
-    async with SessionLocal() as db:
-        for topic in summary.domain_shifts:
-            matched_domain = (await db.execute(select(InterestVector).filter(InterestVector.domain == topic))).scalars().first()
-            if matched_domain:
-                matched_domain.weight = min(1.0, matched_domain.weight + 0.05)
-        await db.commit()
-        
-    context.user_data['seek_chat'] = None
-    await update.message.reply_text(f"[Seek Chat Concluded early]\nSummary: {summary.summary}")
+    await update.message.reply_text(
+        "💡 Seek is now continuously contextual!\n\n"
+        "• Reply to any Neutral Brick to interrogate or spar with it.\n"
+        "• Send any raw thought or question to query your Librarian.\n"
+        "There are no rigid chat sessions to end."
+    )
 
 
 async def handle_document(update: Update, context: ContextTypes.DEFAULT_TYPE):

@@ -1,31 +1,64 @@
 import os
-import json
+import re
 import logging
 from typing import Optional, Dict, Any
-from pydantic import BaseModel, Field
-import litellm
-from src.config import settings, Capability, MODEL_POOLS
+from src.config import settings, Tier
+from src.utils.llm_client import generate_completion_async
 
 logger = logging.getLogger(__name__)
 
-class StrategyBrick(BaseModel):
-    core_thesis: str = Field(description="The core thesis compressed into a neutral, dense sentence.")
-    key_mechanics: str = Field(description="Objective mechanics of how it works without fluff.")
-    critical_pointers: list[str] = Field(description="A list of dense, objective pointers without unnecessary sentences.")
+CPO_VOICE_PROMPT = """
+VOICE & STYLE DIRECTIVE:
+You are speaking directly to the Founder in Telegram chat as a sharp, incisive strategic co-founder.
+- Answer first. Direct, punchy, and concise (Strict limit: under 100 words).
+- Speak in natural, clean prose with short paragraphs.
+- STRICTLY BANNED: Markdown tables (|---|), developer headers (###), and code blocks (```) unless the user explicitly asked for code/tables.
+- Use at most one bold phrase for key emphasis.
+- End with one natural, forward-looking question or immediate tactical next step.
+"""
 
+def parse_neutral_brick(text: str) -> Dict[str, Any]:
+    """
+    Tolerant plain-text parser that extracts thesis, mechanics, and pointers.
+    Resilient across Gemini, NVIDIA, OpenRouter, and Cloudflare.
+    """
+    clean_text = text.strip()
+    # Strip any focus state tag if prepended
+    if "Focus State" in clean_text:
+        clean_text = clean_text.split("]", 1)[-1].strip()
 
-def _get_api_key(model_id: str) -> str:
-    from src.config import settings
-    if "openrouter" in model_id: return settings.openrouter_api_key
-    if "nvidia" in model_id: return settings.nvidia_api_key
-    if "gemini" in model_id: return settings.gemini_api_key
-    return settings.cloudflare_api_key
+    thesis = ""
+    mechanics = ""
+    pointers = []
 
-def _get_kwargs(model_id: str) -> dict:
-    kwargs = {"api_key": _get_api_key(model_id)}
-    if "cloudflare" in model_id:
-        kwargs["drop_params"] = True
-    return kwargs
+    # Look for labelled tags: THESIS:, MECHANICS:, POINTERS:
+    thesis_match = re.search(r'(?:THESIS|CORE THESIS):\s*(.*?)(?=\n*(?:MECHANICS|KEY MECHANICS|POINTERS|CRITICAL POINTERS):|$)', clean_text, re.DOTALL | re.IGNORECASE)
+    if thesis_match:
+        thesis = thesis_match.group(1).strip()
+
+    mechanics_match = re.search(r'(?:MECHANICS|KEY MECHANICS):\s*(.*?)(?=\n*(?:POINTERS|CRITICAL POINTERS):|$)', clean_text, re.DOTALL | re.IGNORECASE)
+    if mechanics_match:
+        mechanics = mechanics_match.group(1).strip()
+
+    pointers_match = re.search(r'(?:POINTERS|CRITICAL POINTERS):\s*(.*)', clean_text, re.DOTALL | re.IGNORECASE)
+    if pointers_match:
+        raw_pointers = pointers_match.group(1).strip()
+        # Extract lines starting with -, *, or digits
+        lines = [line.strip().lstrip("-*•0123456789. ") for line in raw_pointers.splitlines() if line.strip()]
+        pointers = [l for l in lines if l]
+
+    # Fallback if the model didn't use strict labels
+    if not thesis:
+        paragraphs = [p.strip() for p in clean_text.split("\n\n") if p.strip()]
+        thesis = paragraphs[0] if paragraphs else clean_text[:300]
+        mechanics = paragraphs[1] if len(paragraphs) > 1 else ""
+        pointers = paragraphs[2:] if len(paragraphs) > 2 else []
+
+    return {
+        "core_thesis": thesis,
+        "key_mechanics": mechanics,
+        "critical_pointers": pointers
+    }
 
 class DualLayerContextEngine:
     def __init__(self, root_dir: str = "."):
@@ -39,172 +72,114 @@ class DualLayerContextEngine:
             return f.read().strip()
 
     def build_system_prompt(self, focus_state: Optional[str] = None) -> str:
-        # 1. Global Context
         global_context = self._read_file(self.mission_directive_path)
         if not global_context:
-            global_context = "You are a strategic advisor."
+            global_context = "You are a strategic advisor helping the Founder build high-leverage software."
 
-        # Assembly
         prompt = f"""GLOBAL MISSION DIRECTIVE:
 {global_context}
 
 NEUTRAL BRICK EXTRACTION:
-Ruthlessly strip unnecessary sentences, fluff, and build-up. Compress the article into dense, objective pointers (a 'Neutral Brick'). Do not use unnecessary adjectives. Be objective and direct.\nOUTPUT STRICTLY A RAW JSON DICTIONARY with keys: 'core_thesis' (string), 'key_mechanics' (string), and 'critical_pointers' (list of strings).
+Ruthlessly strip unnecessary sentences, fluff, and build-up. Compress the article into dense, objective pointers (a 'Neutral Brick'). Do not use unnecessary adjectives. Be objective and direct.
 
+OUTPUT FORMAT (STRICT):
+THESIS: [1-2 dense sentences capturing the core insight]
+MECHANICS: [How and why it works mechanically]
+POINTERS:
+- [Tactical point 1]
+- [Tactical point 2]
+- [Tactical point 3]
 """
-        # 3. Ephemeral Focus Context (Highest Priority Overriding Layer)
         if focus_state:
             prompt += f"""
 🎯 ACTIVE FOCUS STATE:
 The user is currently focused entirely on the following goal:
 "{focus_state}"
-ALL strategies you extract MUST be strictly mapped, tailored, and constrained to accelerating THIS specific focus goal. Ignore tangents.
-IMPORTANT: Because Focus State is active, you MUST strictly prepend your output with the exact string `[❗️ Focus State]`.
+ALL insights MUST be strictly mapped and constrained to accelerating THIS specific focus goal. Ignore tangents.
 """
         return prompt
 
     async def generate_strategy(self, content_text: str, focus_state: Optional[str] = None) -> Optional[Dict[str, Any]]:
-        # TODO: Add focus_expires_at logic with a 15-minute TTL requirement for the focus_state 
-        # so the telegram handler knows when to drop it.
+        """Generates a Neutral Brick using the FLASH / LITE Tier (Gemini -> NIM -> Cloudflare)."""
         system_prompt = self.build_system_prompt(focus_state)
-        
         messages = [
             {"role": "system", "content": system_prompt},
-            {"role": "user", "content": f"Extract a Strategy Brick from the following content:\n\n{content_text}"}
+            {"role": "user", "content": f"Extract a Neutral Brick from the following content:\n\n{content_text}"}
         ]
 
-        # Use the Fast Creative pool for Strategy Bricks (extraction doesn't require deep logic)
-        model_pool = MODEL_POOLS.get(Capability.FAST_CREATIVE, [])
-        if not model_pool:
-            logger.error("No models available in FAST_CREATIVE pool.")
+        try:
+            raw_response = await generate_completion_async(Tier.LITE.value, messages=messages, temperature=0.2)
+            parsed = parse_neutral_brick(raw_response)
+            return parsed
+        except Exception as e:
+            logger.error(f"Strategy generation failed: {e}")
             return None
 
-        # Linear Fallback Loop
-        for model_id in model_pool:
-            try:
-                logger.info(f"Attempting strategy generation with model: {model_id}")
-                kwargs = _get_kwargs(model_id)
-                if "cloudflare" not in model_id:
-                    kwargs["response_format"] = StrategyBrick
-
-                response = await litellm.acompletion(
-                    model=model_id,
-                    messages=messages,
-                    **kwargs
-                )
-                
-                content = response.choices[0].message.content
-                if isinstance(content, str):
-                    if 'Focus State' in content:
-                        content = content.split(']', 1)[-1].strip()
-                    content = content.strip()
-                    if content.startswith('`json'): content = content[7:]
-                    elif content.startswith('`'): content = content[3:]
-                    if content.endswith('`'): content = content[:-3]
-                    content = content.strip()
-                    import json, re
-                    try:
-                        return json.loads(content)
-                    except json.JSONDecodeError:
-                        match = re.search(r'\{.*\}', content, re.DOTALL)
-                        if match: return json.loads(match.group(0))
-                        raise
-                else:
-                    return content # Already parsed dict
-
-            except Exception as e:
-                logger.warning(f"Model {model_id} failed: {str(e)}. Failing over...")
-                continue
-                
-        logger.error("All models in the FAST_CREATIVE pool failed.")
-        return None
-
     async def apply_lens(self, brick_text: str, lens_name: str, focus_state: Optional[str] = None) -> Optional[str]:
+        """Applies an analytical lens to a Neutral Brick using the PRO Tier."""
         global_context = self._read_file(self.mission_directive_path)
-        if not global_context:
-            global_context = "You are a strategic advisor."
-            
         lens_path = os.path.join(self.root_dir, "src", "directives", "lenses", f"{lens_name}.md")
         lens_context = self._read_file(lens_path)
         if not lens_context:
             lens_context = f"Apply the {lens_name} lens to the analysis."
-            
-        system_prompt = f"GLOBAL MISSION DIRECTIVE:\n{global_context}\n\nLENS APPLIED: {lens_name.upper()}\n{lens_context}\n\n"
-        
+
+        system_prompt = f"""GLOBAL MISSION DIRECTIVE:
+{global_context}
+
+LENS APPLIED: {lens_name.upper()}
+{lens_context}
+
+{CPO_VOICE_PROMPT}
+"""
         if focus_state:
-            system_prompt += f"🎯 ACTIVE FOCUS STATE:\nThe user is currently focused entirely on the following goal:\n\"{focus_state}\"\nALL insights MUST be strictly tailored and constrained to accelerating THIS specific focus goal.\n"
-            
+            system_prompt += f"\n🎯 ACTIVE FOCUS STATE: {focus_state}\n"
+
         messages = [
             {"role": "system", "content": system_prompt},
             {"role": "user", "content": f"Apply the selected lens to the following Neutral Brick:\n\n{brick_text}"}
         ]
-        
-        model_pool = MODEL_POOLS.get(Capability.DEEP_REASONING, [])
-        if not model_pool:
-            logger.error("No models available in DEEP_REASONING pool.")
-            return None
-            
-        for model_id in model_pool:
-            try:
-                response = await litellm.acompletion(
-                    model=model_id,
-                    messages=messages,
-                    **_get_kwargs(model_id)
-                )
-                return response.choices[0].message.content
-            except Exception as e:
-                logger.warning(f"Model {model_id} failed for apply_lens: {str(e)}. Failing over...")
-                continue
-                
-        logger.error("All models in the DEEP_REASONING pool failed for apply_lens.")
-        return None
 
-    
+        try:
+            return await generate_completion_async(Tier.PRO.value, messages=messages, temperature=0.7)
+        except Exception as e:
+            logger.error(f"Lens application failed: {e}")
+            return "I couldn't apply this lens right now due to a temporary service issue. Ask me again in a moment!"
+
     async def ask_brick(self, brick_text: str, question: str, focus_state: Optional[str] = None) -> Optional[str]:
+        """Contextually spars with the Founder on a specific Neutral Brick using the PRO Tier."""
         system_prompt = self.build_system_prompt(focus_state)
-        system_prompt += "\n\nThe user is asking a specific question about the provided Neutral Brick. Answer their question directly using the insights from the brick and your own reasoning."
-        
+        system_prompt += f"\n\n{CPO_VOICE_PROMPT}\nThe Founder is asking a specific question or pushing back on the provided Neutral Brick. Answer directly using the Brick's context and your reasoning."
+
         messages = [
             {"role": "system", "content": system_prompt},
-            {"role": "user", "content": f"NEUTRAL BRICK:\n{brick_text}\n\nUSER QUESTION: {question}"}
+            {"role": "user", "content": f"NEUTRAL BRICK:\n{brick_text}\n\nFOUNDER QUESTION: {question}"}
         ]
-        
-        from src.config import MODEL_POOLS, Capability
-        import litellm
-        model_pool = MODEL_POOLS.get(Capability.DEEP_REASONING, [])
-        for model_id in model_pool:
-            try:
-                kwargs = _get_kwargs(model_id)
-                response = await litellm.acompletion(
-                    model=model_id,
-                    messages=messages,
-                    **kwargs
-                )
-                return response.choices[0].message.content
-            except Exception as e:
-                continue
-        return "Failed to analyze the brick."
+
+        try:
+            return await generate_completion_async(Tier.PRO.value, messages=messages, temperature=0.7)
+        except Exception as e:
+            logger.error(f"Ask-the-Brick failed: {e}")
+            return "I couldn't process your question against this brick right now. Give me a moment and try again!"
 
     async def run_librarian(self, query: str, db, focus_state: Optional[str] = None) -> Optional[str]:
-        """Performs vector search across ContentItems, gathers NeutralBricks, and synthesizes."""
+        """Performs vector search across ContentItems, gathers NeutralBricks, and synthesizes using PRO Tier."""
         from src.ingestion.embedder import get_embedder
         from src.db.models import ContentItem, NeutralBrick
         from sqlalchemy import select
-        
+
         embedder = get_embedder()
         query_vector = await embedder.embed_text(query)
-        
-        # Search for top 3 relevant articles
+
         search_results = (await db.execute(
             select(ContentItem)
             .filter(ContentItem.embedding != None)
             .order_by(ContentItem.embedding.cosine_distance(query_vector))
             .limit(3)
         )).scalars().all()
-        
+
         if not search_results:
-            return "Your knowledge base is empty or has no embedded content yet."
-            
+            return "Your knowledge base has no indexed content yet. Ingest a few articles first!"
+
         context_blocks = []
         for item in search_results:
             brick = (await db.execute(select(NeutralBrick).filter(NeutralBrick.source_content_id == item.id))).scalar_one_or_none()
@@ -212,29 +187,19 @@ IMPORTANT: Because Focus State is active, you MUST strictly prepend your output 
                 context_blocks.append(f"Title: {item.title}\nCore Thesis: {brick.core_thesis}\nMechanics: {brick.key_mechanics}\nPointers: {brick.critical_pointers}")
             else:
                 context_blocks.append(f"Title: {item.title}\nRaw Snippet: {item.raw_text[:1000]}")
-                
+
         combined_context = "\n\n---\n\n".join(context_blocks)
-        
+
         system_prompt = self.build_system_prompt(focus_state)
-        system_prompt += "\n\nYOU ARE THE LIBRARIAN. The Founder is exploring a specific idea. I will provide you with highly relevant Neutral Bricks retrieved from their Knowledge Base. Your job is to synthesize these bricks, highlight overlapping patterns, and explain what their Knowledge Base says about this idea. Be ruthless, concise, and profound. DO NOT just summarize the articles individually. Merge them into a single strategic insight."
-        
+        system_prompt += f"\n\n{CPO_VOICE_PROMPT}\nYOU ARE THE LIBRARIAN. The Founder is exploring an idea. Synthesize the overlapping patterns from the retrieved bricks. Explain what their accumulated knowledge says about this idea."
+
         messages = [
             {"role": "system", "content": system_prompt},
             {"role": "user", "content": f"IDEA QUERY: {query}\n\nRETRIEVED KNOWLEDGE BASE BRICKS:\n{combined_context}"}
         ]
-        
-        model_pool = MODEL_POOLS.get(Capability.DEEP_REASONING, [])
-        for model_id in model_pool:
-            try:
-                import litellm
-                from src.config import settings
-                response = await litellm.acompletion(
-                    model=model_id,
-                    messages=messages,
-                    **_get_kwargs(model_id)
-                )
-                return response.choices[0].message.content
-            except Exception as e:
-                continue
-                
-        return "All reasoning models failed to run the Librarian."
+
+        try:
+            return await generate_completion_async(Tier.PRO.value, messages=messages, temperature=0.7)
+        except Exception as e:
+            logger.error(f"Librarian synthesis failed: {e}")
+            return "The Librarian hit a temporary issue consulting your knowledge base. Please try asking again in a moment!"
