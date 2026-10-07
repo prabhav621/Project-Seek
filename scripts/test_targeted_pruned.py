@@ -9,6 +9,13 @@ sys.path.append(str(root_path))
 from src.utils.llm_client import _apply_provider_kwargs
 import litellm
 
+# Configure logging to console and bot_logs.txt
+log_file = root_path / "bot_logs.txt"
+def log(msg: str):
+    print(msg)
+    with open(log_file, "a", encoding="utf-8") as f:
+        f.write(msg + "\n")
+
 models_to_test = [
     ("nvidia_nim/meta/llama-3.3-70b-instruct", 35, "NVIDIA NIM (Llama 3.3 70B)", True),
     ("openrouter/anthropic/claude-sonnet-4.5", 30, "OpenRouter (Claude Sonnet 4.5)", True),
@@ -17,9 +24,9 @@ models_to_test = [
 ]
 
 async def test():
-    print("\n" + "="*50)
-    print("🎯 TARGETED TEST: VERIFYING REPLACEMENT NODES")
-    print("="*50)
+    log("\n" + "="*50)
+    log("🎯 TARGETED TEST: VERIFYING REPLACEMENT NODES")
+    log("="*50)
     
     prompt = "Explain in 1 concise sentence why distribution beats product."
     messages = [
@@ -28,9 +35,9 @@ async def test():
     ]
     
     for slug, timeout, label, is_pro in models_to_test:
-        print(f"\n--------------------------------------------------")
-        print(f"Testing: {label}")
-        print(f"Slug: {slug} [Timeout: {timeout}s]")
+        log(f"\n--------------------------------------------------")
+        log(f"Testing: {label}")
+        log(f"Slug: {slug} [Timeout: {timeout}s]")
         
         kwargs = {
             "max_tokens": 1024 if not is_pro else 2048,
@@ -45,14 +52,14 @@ async def test():
             resp = await litellm.acompletion(model=slug, messages=messages, **call_kwargs)
             elapsed = round(time.time() - start, 2)
             content = resp.choices[0].message.content.strip()
-            print(f"✅ SUCCESS ({elapsed}s)")
-            print(f"Output: {content[:200]}...")
+            log(f"✅ SUCCESS ({elapsed}s)")
+            log(f"Output: {content[:200]}...")
         except Exception as e:
             elapsed = round(time.time() - start, 2)
-            print(f"❌ FAILED ({elapsed}s)")
-            print(f"Error: {e}")
+            log(f"❌ FAILED ({elapsed}s)")
+            log(f"Error: {e}")
             
-    print("\n" + "="*50 + "\n")
+    log("\n" + "="*50 + "\n")
 
 if __name__ == "__main__":
     asyncio.run(test())
