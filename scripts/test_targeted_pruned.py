@@ -12,6 +12,7 @@ import litellm
 models_to_test = [
     ("nvidia_nim/meta/llama-3.3-70b-instruct", 35, "NVIDIA NIM (Llama 3.3 70B)", True),
     ("openrouter/anthropic/claude-sonnet-4.5", 30, "OpenRouter (Claude Sonnet 4.5)", True),
+    ("cloudflare/@cf/meta/llama-3.3-70b-instruct-fp8-fast", 25, "Cloudflare (Llama 3.3 70B FP8)", True),
     ("cloudflare/@cf/meta/llama-3.1-8b-instruct", 15, "Cloudflare (Llama 3.1 8B)", False)
 ]
 

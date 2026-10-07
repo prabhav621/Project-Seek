@@ -68,7 +68,8 @@ def _get_cascade_sequence(target: str) -> List[Tuple[str, int, str]]:
         sequence.append(("openrouter/anthropic/claude-sonnet-4.5", 30, "OpenRouter (Claude Sonnet 4.5 Paid)"))
         sequence.append(("openrouter/meta-llama/llama-3.1-70b-instruct", 25, "OpenRouter (Llama 3.1 70B Paid)"))
         
-        # Cloudflare Edge Safety Net (Verified Working Model)
+        # Cloudflare Edge Safety Net (70B Heavyweight + 8B Fallback)
+        sequence.append(("cloudflare/@cf/meta/llama-3.3-70b-instruct-fp8-fast", 25, "Cloudflare (Llama 3.3 70B FP8)"))
         sequence.append(("cloudflare/@cf/meta/llama-3.1-8b-instruct", 15, "Cloudflare (Llama 3.1 8B Safety Net)"))
         return sequence
 
