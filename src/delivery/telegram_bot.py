@@ -508,26 +508,29 @@ async def handle_lens(update: Update, context: ContextTypes.DEFAULT_TYPE):
     message = update.message
     if not message: return
     
-    if not message.reply_to_message or not message.reply_to_message.text:
-        await message.reply_text("You must reply to a message containing a Neutral Brick.")
-        return
-        
-    brick_text = message.reply_to_message.text
-    text = message.text
-    command = text.split()[0].lower()
+    # 1. Determine target Brick text
+    brick_text = ""
+    brick_id = None
     
-    lens_name = ""
-    if command == "/lens":
-        args = context.args
-        if not args:
-            await message.reply_text("Usage: /lens <lens_name> or /lens_<lens_name>")
-            return
-        lens_name = args[0].lower()
-    elif command.startswith("/lens_"):
-        lens_name = command.replace("/lens_", "")
+    if message.reply_to_message and message.reply_to_message.text:
+        brick_text = message.reply_to_message.text
     else:
+        # Fallback to the latest Neutral Brick in DB
+        async with SessionLocal() as db:
+            from src.db.models import NeutralBrick
+            latest_brick = (await db.execute(select(NeutralBrick).order_by(NeutralBrick.created_at.desc()))).scalars().first()
+            if latest_brick:
+                brick_id = str(latest_brick.id)
+                pointers = "\n".join([f"- {p}" for p in latest_brick.critical_pointers]) if latest_brick.critical_pointers else "None"
+                brick_text = f"🧱 Neutral Brick\n\nCore Thesis:\n{latest_brick.core_thesis}\n\nMechanics:\n{latest_brick.key_mechanics}\n\nPointers:\n{pointers}"
+    
+    if not brick_text:
+        await message.reply_text("No Neutral Brick found. Ingest an article or run /forge first!")
         return
-        
+
+    text = message.text or ""
+    command = text.split()[0].lower() if text else ""
+    
     chat_id = message.chat_id
     focus = None
     if chat_id in active_focus:
@@ -536,21 +539,109 @@ async def handle_lens(update: Update, context: ContextTypes.DEFAULT_TYPE):
             del active_focus[chat_id]
         else:
             focus = focus_data["goal"]
-            
+
     from src.synthesis.strategy_generator import DualLayerContextEngine
     engine = DualLayerContextEngine()
+
+    # 2. Check for explicit shortcut command like /lens_architect
+    if command.startswith("/lens_"):
+        lens_name = command.replace("/lens_", "")
+        processing_msg = await message.reply_text(f"🔍 Applying {lens_name.replace('_', ' ').title()} Lens...")
+        res = await engine.apply_lens(brick_text, lens_name, focus)
+        await processing_msg.edit_text(res or "Failed to apply lens.")
+        return
+
+    # 3. Check arguments for /lens
+    args = context.args or []
     
-    response = await engine.apply_lens(brick_text, lens_name, focus)
-    if response:
-        await message.reply_text(response)
+    # If bare /lens with no arguments -> Render Inline Keyboard Picker!
+    if not args:
+        context.chat_data["pending_lens_brick_text"] = brick_text
+        keyboard = [
+            [
+                InlineKeyboardButton("🏗️ Architect", callback_data="lens_choice:architect"),
+                InlineKeyboardButton("📈 Growth", callback_data="lens_choice:growth")
+            ],
+            [
+                InlineKeyboardButton("🛡️ Red Team", callback_data="lens_choice:red_team"),
+                InlineKeyboardButton("✅ Validator", callback_data="lens_choice:validator")
+            ],
+            [
+                InlineKeyboardButton("⚛️ First Principles", callback_data="lens_choice:first_principles")
+            ]
+        ]
+        await message.reply_text(
+            "🔍 **Select an analytical lens to apply:**",
+            reply_markup=InlineKeyboardMarkup(keyboard),
+            parse_mode='Markdown'
+        )
+        return
+
+    # 4. If /lens has arguments (e.g. /lens growth OR /lens unit economics)
+    target_arg = " ".join(args).strip().lower()
+    canonical_lenses = {
+        "architect": "architect",
+        "growth": "growth",
+        "redteam": "red_team",
+        "red_team": "red_team",
+        "validator": "validator",
+        "first_principles": "first_principles",
+        "firstprinciples": "first_principles",
+        "1stprinciple": "first_principles"
+    }
+
+    if target_arg in canonical_lenses:
+        lens_name = canonical_lenses[target_arg]
+        processing_msg = await message.reply_text(f"🔍 Applying {lens_name.replace('_', ' ').title()} Lens...")
+        res = await engine.apply_lens(brick_text, lens_name, focus)
+        await processing_msg.edit_text(res or "Failed to apply lens.")
     else:
-        await message.reply_text("Failed to apply lens.")
+        # Ad-hoc custom lens: treat as contextual sparring via ask_brick!
+        processing_msg = await message.reply_text(f"🧠 Examining Brick through lens of: '{target_arg}'...")
+        prompt = f"Analyze this Brick through the strategic lens of: {target_arg}"
+        res = await engine.ask_brick(brick_text, prompt, focus)
+        await processing_msg.edit_text(res or "Failed to analyze.")
 
 async def handle_callback_query(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
 
     data = query.data
+    chat_id = query.message.chat_id
+    focus = None
+    if chat_id in active_focus:
+        focus_data = active_focus[chat_id]
+        if datetime.now() > focus_data["expires_at"]:
+            del active_focus[chat_id]
+        else:
+            focus = focus_data["goal"]
+
+    from src.synthesis.strategy_generator import DualLayerContextEngine
+    engine = DualLayerContextEngine()
+
+    # Case A: From /lens inline picker (lens_choice:<lens_name>)
+    if data.startswith("lens_choice:"):
+        lens_name = data.split(":", 1)[1]
+        brick_text = context.chat_data.get("pending_lens_brick_text")
+        
+        if not brick_text:
+            async with SessionLocal() as db:
+                from src.db.models import NeutralBrick
+                latest_brick = (await db.execute(select(NeutralBrick).order_by(NeutralBrick.created_at.desc()))).scalars().first()
+                if latest_brick:
+                    pointers = "\n".join([f"- {p}" for p in latest_brick.critical_pointers]) if latest_brick.critical_pointers else "None"
+                    brick_text = f"🧱 Neutral Brick\n\nCore Thesis:\n{latest_brick.core_thesis}\n\nMechanics:\n{latest_brick.key_mechanics}\n\nPointers:\n{pointers}"
+
+        if not brick_text:
+            await query.edit_message_text("No Brick found to apply lens to.")
+            return
+
+        await query.edit_message_text(f"🔍 Applying {lens_name.replace('_', ' ').title()} Lens...")
+        response = await engine.apply_lens(brick_text, lens_name, focus)
+        await context.bot.send_message(chat_id=chat_id, text=response or "Failed to apply lens.")
+        return
+
+    # Case B: From Daily Forge inline buttons (lens:<lens_name>:<brick_id>)
     if data.startswith("lens:"):
         parts = data.split(":")
         if len(parts) == 3:
@@ -562,28 +653,16 @@ async def handle_callback_query(update: Update, context: ContextTypes.DEFAULT_TY
                 try:
                     b_id = uuid.UUID(brick_id)
                 except ValueError:
-                    await context.bot.send_message(chat_id=query.message.chat_id, text="Invalid Brick ID.")
+                    await context.bot.send_message(chat_id=chat_id, text="Invalid Brick ID.")
                     return
                 brick = (await db.execute(select(NeutralBrick).filter(NeutralBrick.id == b_id))).scalars().first()
                 
             if not brick:
-                await context.bot.send_message(chat_id=query.message.chat_id, text="Brick not found.")
+                await context.bot.send_message(chat_id=chat_id, text="Brick not found.")
                 return
 
             pointers = "\n".join([f"- {p}" for p in brick.critical_pointers]) if brick.critical_pointers else "None"
             brick_text = f"🧱 Neutral Brick\n\nCore Thesis:\n{brick.core_thesis}\n\nMechanics:\n{brick.key_mechanics}\n\nPointers:\n{pointers}"
-            
-            chat_id = query.message.chat_id
-            focus = None
-            if chat_id in active_focus:
-                focus_data = active_focus[chat_id]
-                if datetime.now() > focus_data["expires_at"]:
-                    del active_focus[chat_id]
-                else:
-                    focus = focus_data["goal"]
-
-            from src.synthesis.strategy_generator import DualLayerContextEngine
-            engine = DualLayerContextEngine()
             
             response = await engine.apply_lens(brick_text, lens_name, focus)
             if response:

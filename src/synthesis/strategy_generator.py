@@ -118,15 +118,32 @@ ALL insights MUST be strictly mapped and constrained to accelerating THIS specif
     async def apply_lens(self, brick_text: str, lens_name: str, focus_state: Optional[str] = None) -> Optional[str]:
         """Applies an analytical lens to a Neutral Brick using the PRO Tier."""
         global_context = self._read_file(self.mission_directive_path)
-        lens_path = os.path.join(self.root_dir, "src", "directives", "lenses", f"{lens_name}.md")
-        lens_context = self._read_file(lens_path)
+        
+        # Normalize lens file naming
+        clean_name = lens_name.lower().replace("-", "_")
+        if clean_name in ["redteam", "red_team"]:
+            clean_name = "red_team"
+        elif clean_name in ["1stprinciple", "1st_principle", "firstprinciples", "first_principles"]:
+            clean_name = "first_principles"
+            
+        candidate_paths = [
+            os.path.join(self.root_dir, "directives", f"{clean_name}.md"),
+            os.path.join(self.root_dir, "src", "directives", "lenses", f"{clean_name}.md"),
+            os.path.join(self.root_dir, "directives", f"{lens_name}.md")
+        ]
+        lens_context = ""
+        for p in candidate_paths:
+            if os.path.exists(p):
+                lens_context = self._read_file(p)
+                break
+                
         if not lens_context:
-            lens_context = f"Apply the {lens_name} lens to the analysis."
+            lens_context = f"Apply the {clean_name.replace('_', ' ').title()} lens to rigorously analyze this brick."
 
         system_prompt = f"""GLOBAL MISSION DIRECTIVE:
 {global_context}
 
-LENS APPLIED: {lens_name.upper()}
+LENS APPLIED: {clean_name.upper()}
 {lens_context}
 
 {CPO_VOICE_PROMPT}
