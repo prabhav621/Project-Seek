@@ -220,3 +220,83 @@ LENS APPLIED: {clean_name.upper()}
         except Exception as e:
             logger.error(f"Librarian synthesis failed: {e}")
             return "The Librarian hit a temporary issue consulting your knowledge base. Please try asking again in a moment!"
+
+    async def spar_kata(
+        self,
+        forge_text: str,
+        user_message: str,
+        db=None,
+        focus_state: Optional[str] = None
+    ) -> Optional[str]:
+        """
+        Disambiguates which Kata the Founder is addressing, retrieves relevant
+        vault knowledge (Librarian), and spars as an incisive CPO co-founder.
+        """
+        retrieved_context = ""
+        if db:
+            try:
+                from src.ingestion.embedder import get_embedder
+                from src.db.models import ContentItem, NeutralBrick
+                from sqlalchemy import select
+
+                embedder = get_embedder()
+                search_query = f"{user_message} {forge_text[:400]}"
+                query_vector = await embedder.embed_text(search_query)
+
+                search_results = (await db.execute(
+                    select(ContentItem)
+                    .filter(ContentItem.embedding != None)
+                    .order_by(ContentItem.embedding.cosine_distance(query_vector))
+                    .limit(2)
+                )).scalars().all()
+
+                blocks = []
+                for item in search_results:
+                    brick = (await db.execute(select(NeutralBrick).filter(NeutralBrick.source_content_id == item.id))).scalar_one_or_none()
+                    if brick:
+                        blocks.append(f"Title: {item.title}\nThesis: {brick.core_thesis}\nPointers: {brick.critical_pointers}")
+                if blocks:
+                    retrieved_context = "\n\n".join(blocks)
+            except Exception as embed_e:
+                logger.warning(f"Librarian retrieval for Kata sparring failed: {embed_e}")
+
+        global_context = self._read_file(self.mission_directive_path)
+        system_prompt = f"""GLOBAL MISSION DIRECTIVE:
+{global_context}
+
+ROLE:
+You are the incisive CPO and tactical sparring partner. The Founder is replying to a Daily Forge that contains Quick Katas.
+
+FORGE CONTEXT (CONTAINS QUICK KATAS):
+{forge_text}
+"""
+        if retrieved_context:
+            system_prompt += f"""
+RELEVANT VAULT RETRIEVAL (From Founder's 514 Neutral Bricks):
+{retrieved_context}
+"""
+        system_prompt += f"""
+{CPO_VOICE_PROMPT}
+
+DISAMBIGUATION & SPARRING RULES:
+1. IDENTIFY THE KATA: The Daily Forge presents multiple Katas (e.g. Quick Kata #1 and Quick Kata #2). You MUST begin by explicitly identifying which Kata the Founder is answering (e.g., "On Kata #1 (Title):" or "On Kata #2:"). Never confuse or conflate them. If the Founder addressed both, address both distinctly.
+2. SPARRING OR LIBRARIAN GUIDANCE:
+   - If the Founder submitted an answer or solution: Stress-test it immediately. Acknowledge what works, but aggressively expose their biggest blind spot, fragile assumption, or execution bottleneck.
+   - If the Founder asked what their notes say or for guidance: Synthesize the practical answer directly from the retrieved knowledge base bricks.
+   - Cross-reference their vault's principles whenever applicable.
+3. Strict limit: Under 100 words in punchy CPO prose. End with one forward-looking question or immediate next move.
+"""
+        if focus_state:
+            system_prompt += f"\n🎯 ACTIVE FOCUS STATE: {focus_state}\n"
+
+        messages = [
+            {"role": "system", "content": system_prompt},
+            {"role": "user", "content": f"FOUNDER REPLY:\n{user_message}"}
+        ]
+
+        try:
+            return await generate_completion_async(Tier.PRO.value, messages=messages, temperature=0.7)
+        except Exception as e:
+            logger.error(f"Kata sparring failed: {e}")
+            return "I hit a temporary issue evaluating this Kata. Send your thought again in a moment!"
+

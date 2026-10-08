@@ -270,8 +270,24 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if message.reply_to_message and message.reply_to_message.from_user.id == context.bot.id:
         original_text = message.reply_to_message.text or ""
         user_query = message.text
-        processing_msg = await message.reply_text("🤔 Thinking with you...")
 
+        # Detect if replying to a Kata or Daily Forge
+        is_kata = any(k in original_text.upper() for k in ["QUICK KATA", "KATA #", "FORGE", "KATA SPARRING"])
+        
+        if is_kata:
+            processing_msg = await message.reply_text("🥋 Sparring on your Kata...")
+            try:
+                async with SessionLocal() as db:
+                    insight = await engine.spar_kata(original_text, user_query, db, focus)
+                output = f"🥋 **Kata Sparring:**\n\n{insight}"
+                if focus:
+                    output = f"[❗️ Focus State: {focus}]\n\n" + output
+                await processing_msg.edit_text(output, parse_mode='Markdown')
+            except Exception as e:
+                await processing_msg.edit_text(f"Could not process Kata reply: {e}")
+            return
+
+        processing_msg = await message.reply_text("🤔 Thinking with you...")
         try:
             insight = await engine.ask_brick(original_text, user_query, focus)
             output = f"🧠 **Insight:**\n\n{insight}"
