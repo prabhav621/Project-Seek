@@ -1,5 +1,69 @@
-.env
+# Python
 __pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+env/
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+
+# Virtual Environments
 .venv/
-*.pyc
-src/project_seek.egg-info/
+venv/
+ENV/
+
+# Environment Variables & Secrets
+.env
+*.env
+!*.env.example
+
+# Databases
+*.db
+*.sqlite
+*.sqlite3
+seek.db
+
+# Logs
+*.log
+bot_logs.txt
+failed_ingestions.txt
+
+# Editor / OS
+.vscode/
+.idea/
+*.swp
+*.swo
+.DS_Store
+Thumbs.db
+
+# Testing & Coverage
+.pytest_cache/
+.coverage
+htmlcov/
+
+# Temporary / Scratch
+scratch/
+scratch_test/
+patch_*.py
+fix_*.py
+fix*.py
+auto_fix.py
+update_*.py
+cleanup_*.py
+drop.py
+revert_*.py
+append_notes.py
