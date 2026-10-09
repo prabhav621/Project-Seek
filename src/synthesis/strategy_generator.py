@@ -60,6 +60,56 @@ def parse_neutral_brick(text: str) -> Dict[str, Any]:
         "critical_pointers": pointers
     }
 
+def extract_relevant_snippets(text: str, query: str, window_size: int = 250, overlap: int = 50, top_k: int = 3) -> list:
+    """
+    Two-Stage Dynamic Windowing:
+    Slices raw text into sliding windows and scores them against query using fast token/lexical matching.
+    Returns the top_k most relevant snippet passages.
+    """
+    if not text or not query:
+        return []
+
+    words = text.split()
+    if len(words) <= window_size:
+        return [text.strip()]
+
+    query_terms = set(re.findall(r'\b[a-zA-Z0-9_]{3,}\b', query.lower()))
+    if not query_terms:
+        return [" ".join(words[:window_size])]
+
+    step = max(1, window_size - overlap)
+    windows = []
+    for i in range(0, len(words), step):
+        chunk = words[i:i + window_size]
+        if not chunk:
+            break
+        chunk_text = " ".join(chunk)
+        chunk_terms = re.findall(r'\b[a-zA-Z0-9_]{3,}\b', chunk_text.lower())
+        if not chunk_terms:
+            continue
+
+        term_matches = sum(1 for t in chunk_terms if t in query_terms)
+        unique_matches = len(set(chunk_terms).intersection(query_terms))
+        score = (unique_matches * 3) + term_matches
+        windows.append((score, i, chunk_text))
+
+    windows.sort(key=lambda x: x[0], reverse=True)
+
+    selected = []
+    selected_indices = []
+    for score, idx, chunk_text in windows:
+        if len(selected) >= top_k:
+            break
+        if any(abs(idx - prev_idx) < (window_size // 2) for prev_idx in selected_indices):
+            continue
+        selected.append(chunk_text)
+        selected_indices.append(idx)
+
+    if not selected:
+        selected = [" ".join(words[:window_size])]
+
+    return selected
+
 class DualLayerContextEngine:
     def __init__(self, root_dir: str = "."):
         self.root_dir = root_dir
@@ -215,7 +265,7 @@ LENS APPLIED: {clean_name.upper()}
     async def ask_brick(self, brick_text: str, question: str, db=None, focus_state: Optional[str] = None) -> Optional[str]:
         """
         Contextually spars with the Founder on a specific Neutral Brick using the PRO Tier.
-        If db is provided, retrieves the original raw source transcript to enable deep-dive answering.
+        If db is provided, dynamically extracts relevant transcript snippets for precision deep-dives.
         """
         system_prompt = self.build_system_prompt(focus_state)
         system_prompt += f"\n\n{CPO_VOICE_PROMPT}\nThe Founder is asking a specific question, pushing back, or deep-diving into the provided Neutral Brick. Answer directly with precision and high agency."
@@ -225,9 +275,22 @@ LENS APPLIED: {clean_name.upper()}
             try:
                 brick, content_item = await self.find_brick_and_source(brick_text, db)
                 if content_item and content_item.raw_text:
-                    system_prompt += "\n\nORIGINAL RAW TRANSCRIPT & SOURCE CONTEXT AVAILABLE:\nYou have direct access to the complete unedited raw transcript / source article from which this Neutral Brick was extracted. If the Founder asks for specific details, quotes, numbers, speaker reasoning, or deep dives beyond the concise summary, analyze the raw transcript and quote or cite the source directly."
-                    raw_excerpt = content_item.raw_text[:15000]
-                    source_context = f"\n\nORIGINAL SOURCE METADATA:\n- Title: {content_item.title}\n- URL: {content_item.source_url}\n- Author / Speaker: {content_item.author or 'Unknown'}\n- Platform: {content_item.source_type}\n\nORIGINAL RAW TRANSCRIPT (UP TO 15,000 CHARS):\n{raw_excerpt}"
+                    system_prompt += (
+                        "\n\nORIGINAL RAW TRANSCRIPT & SOURCE CONTEXT AVAILABLE:\n"
+                        "You have direct access to high-relevance verbatim passages extracted dynamically from the original raw source material. "
+                        "When addressing the Founder's question, cite or quote exact phrases from these passages to anchor your reasoning in authentic proof."
+                    )
+                    snippets = extract_relevant_snippets(content_item.raw_text, question, window_size=250, overlap=50, top_k=3)
+                    snippets_text = "\n\n---\n\n".join([f"[Passage #{i+1}]:\n\"{s}\"" for i, s in enumerate(snippets)])
+                    source_context = (
+                        f"\n\nORIGINAL SOURCE METADATA:\n"
+                        f"- Title: {content_item.title}\n"
+                        f"- URL: {content_item.source_url}\n"
+                        f"- Author / Speaker: {content_item.author or 'Unknown'}\n"
+                        f"- Platform: {content_item.source_type}\n\n"
+                        f"TOP RELEVANT TRANSCRIPT PASSAGES:\n"
+                        f"{snippets_text}"
+                    )
             except Exception as e:
                 logger.warning(f"Could not load source context for ask_brick: {e}", exc_info=True)
 
@@ -245,14 +308,21 @@ LENS APPLIED: {clean_name.upper()}
             return "I couldn't process your question against this brick right now. Give me a moment and try again!"
 
     async def run_librarian(self, query: str, db, focus_state: Optional[str] = None) -> Optional[str]:
-        """Performs vector search across ContentItems, gathers NeutralBricks, and synthesizes using PRO Tier."""
+        """
+        Triangulated Librarian:
+        1. Private Vault Retrieval (top 3 semantic bricks + relevant dynamic snippets)
+        2. Live Market Consensus via DuckDuckGo (<800ms)
+        3. High-conviction synthesis using PRO Tier with [📚 Private Vault] and [🌐 Live Market Reality] badges.
+        """
         from src.ingestion.embedder import get_embedder
         from src.db.models import ContentItem, NeutralBrick
         from sqlalchemy import select
+        from duckduckgo_search import DDGS
 
         embedder = get_embedder()
         query_vector = await embedder.embed_text(query)
 
+        # 1. Private Knowledge Base Retrieval
         search_results = (await db.execute(
             select(ContentItem)
             .filter(ContentItem.embedding != None)
@@ -260,25 +330,74 @@ LENS APPLIED: {clean_name.upper()}
             .limit(3)
         )).scalars().all()
 
-        if not search_results:
-            return "Your knowledge base has no indexed content yet. Ingest a few articles first!"
-
-        context_blocks = []
+        kb_blocks = []
         for item in search_results:
             brick = (await db.execute(select(NeutralBrick).filter(NeutralBrick.source_content_id == item.id))).scalar_one_or_none()
             if brick:
-                context_blocks.append(f"Title: {item.title}\nCore Thesis: {brick.core_thesis}\nMechanics: {brick.key_mechanics}\nPointers: {brick.critical_pointers}")
-            else:
-                context_blocks.append(f"Title: {item.title}\nRaw Snippet: {item.raw_text[:1000]}")
+                kb_blocks.append(
+                    f"📌 Source: {item.title} ({item.source_url or 'Vault'})\n"
+                    f"Core Thesis: {brick.core_thesis}\n"
+                    f"Key Mechanics: {brick.key_mechanics}\n"
+                    f"Pointers: {brick.critical_pointers}"
+                )
+            elif item.raw_text:
+                snippets = extract_relevant_snippets(item.raw_text, query, window_size=200, top_k=2)
+                snippet_text = "\n".join([f"- \"{s[:250]}...\"" for s in snippets])
+                kb_blocks.append(f"📌 Source: {item.title}\nRelevant Passages:\n{snippet_text}")
 
-        combined_context = "\n\n---\n\n".join(context_blocks)
+        kb_context = "\n\n---\n\n".join(kb_blocks) if kb_blocks else "No relevant internal notes found in your private vault."
+
+        # 2. Live Market Consensus (DuckDuckGo Search)
+        web_snippets = []
+        try:
+            from duckduckgo_search import DDGS
+            import asyncio
+            search_query = query.strip()
+            if focus_state:
+                search_query = f"{query} {focus_state[:40]}"
+
+            def _fetch_ddg():
+                try:
+                    return list(DDGS(timeout=8).text(search_query, max_results=3, backend="html"))
+                except Exception as inner_e:
+                    logger.warning(f"DDG fetch error: {inner_e}")
+                    return []
+
+            ddg_results = await asyncio.to_thread(_fetch_ddg)
+            for r in ddg_results:
+                title = r.get('title', 'Web Result')
+                body = r.get('body', '')
+                url = r.get('href', '')
+                if body:
+                    web_snippets.append(f"• [{title}]({url}): {body}")
+        except Exception as e:
+            logger.warning(f"DuckDuckGo search grounding failed: {e}")
+
+        web_context = "\n\n".join(web_snippets) if web_snippets else "No live market search results retrieved."
 
         system_prompt = self.build_system_prompt(focus_state)
-        system_prompt += f"\n\n{CPO_VOICE_PROMPT}\nYOU ARE THE LIBRARIAN. The Founder is exploring an idea. Synthesize the overlapping patterns from the retrieved bricks. Explain what their accumulated knowledge says about this idea."
+        system_prompt += f"""\n\n{CPO_VOICE_PROMPT}
+YOU ARE THE LIBRARIAN & STRATEGIC CHIEF OF STAFF.
+The Founder is exploring an idea or asking a strategic question.
+Synthesize both the Founder's [📚 Private Vault] knowledge AND the [🌐 Live Market Reality].
+
+OUTPUT SPEC (Strictly under 160 words):
+1. **Direct Lever / Answer:** Immediate, punchy strategic recommendation answering the core question.
+2. **[📚 Private Vault]:** Cite 1-2 exact insights, mechanics, or quotes from the Founder's saved bricks.
+3. **[🌐 Live Market Reality]:** Contrast or validate with the latest external industry consensus or developments from live search.
+4. End with one forward-looking tactical question or immediate execution step.
+No conversational filler. Pure cognitive speed.
+"""
+
+        user_content = (
+            f"FOUNDER QUERY: {query}\n\n"
+            f"=== [📚 PRIVATE VAULT KNOWLEDGE] ===\n{kb_context}\n\n"
+            f"=== [🌐 LIVE MARKET REALITY (DUCKDUCKGO)] ===\n{web_context}"
+        )
 
         messages = [
             {"role": "system", "content": system_prompt},
-            {"role": "user", "content": f"IDEA QUERY: {query}\n\nRETRIEVED KNOWLEDGE BASE BRICKS:\n{combined_context}"}
+            {"role": "user", "content": user_content}
         ]
 
         try:

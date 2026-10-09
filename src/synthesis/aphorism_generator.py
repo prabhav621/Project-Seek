@@ -5,7 +5,7 @@ from pydantic import BaseModel, Field
 from src.config import settings, TaskType
 from typing import Optional
 
-client = genai.Client(api_key=settings.gemini_api_key)
+client = genai.Client(api_key=settings.gemini_api_key) if settings.gemini_api_key else None
 
 class AphorismResponse(BaseModel):
     quote_text: str = Field(description="The text of the ancient philosophy quote")

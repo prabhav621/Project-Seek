@@ -3,7 +3,7 @@ from google.genai import types
 from pydantic import BaseModel, Field
 from src.config import settings, TaskType
 
-client = genai.Client(api_key=settings.gemini_api_key)
+client = genai.Client(api_key=settings.gemini_api_key) if settings.gemini_api_key else None
 
 class DeepKataResponse(BaseModel):
     title: str = Field(description="A catchy title for the Kata")

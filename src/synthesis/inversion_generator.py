@@ -4,7 +4,7 @@ from google.genai import types
 from pydantic import BaseModel, Field
 from src.config import settings, TaskType
 
-client = genai.Client(api_key=settings.gemini_api_key)
+client = genai.Client(api_key=settings.gemini_api_key) if settings.gemini_api_key else None
 
 class InversionResponse(BaseModel):
     inversion_prompt: str = Field(description="The Devil's Advocate prompt challenging comfort zones")

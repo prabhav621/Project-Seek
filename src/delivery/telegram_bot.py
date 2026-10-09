@@ -354,9 +354,17 @@ async def post_init(application: Application):
         from src.jobs.forge_builder import build_and_send_forge
         await build_and_send_forge()
 
+    async def scheduled_forager():
+        from src.jobs.forager_job import run_forager
+        try:
+            await run_forager()
+        except Exception as e:
+            logger.error(f"Scheduled forager run failed: {e}")
+
     scheduler.add_job(scheduled_forge, 'cron', hour=8, minute=0)
+    scheduler.add_job(scheduled_forager, 'cron', hour=2, minute=0)
     scheduler.start()
-    print("⏰ Daily Forge Scheduler started for 8:00 AM IST")
+    print("⏰ Daily Forge (8:00 AM IST) & Autonomous Forager (2:00 AM IST) Schedulers started.")
     from telegram import BotCommand
     commands = [
         BotCommand("start", "Start the bot"),
