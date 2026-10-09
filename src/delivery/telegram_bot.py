@@ -1,8 +1,18 @@
-from apscheduler.schedulers.asyncio import AsyncIOScheduler
-import pytz
 import sys
+import time
 import asyncio
 import logging
+from zoneinfo import ZoneInfo
+from datetime import datetime, timedelta
+from apscheduler.schedulers.asyncio import AsyncIOScheduler
+import pytz
+
+def ist_time_converter(secs=None):
+    if secs is None:
+        secs = time.time()
+    return datetime.fromtimestamp(secs, tz=ZoneInfo('Asia/Kolkata')).timetuple()
+
+logging.Formatter.converter = staticmethod(ist_time_converter)
 logging.basicConfig(
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
     level=logging.INFO

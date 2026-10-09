@@ -1,5 +1,6 @@
 import asyncio
 import sys
+import logging
 from pathlib import Path
 import random
 from datetime import datetime, timezone
@@ -14,17 +15,19 @@ from src.synthesis.kata_generator import generate_deep_kata, generate_quick_kata
 from src.synthesis.aphorism_generator import generate_aphorism
 from src.synthesis.inversion_generator import generate_inversion_prompt
 
+logger = logging.getLogger(__name__)
+
 async def build_and_send_forge():
-    print("💥 Building the Daily Forge...")
+    logger.info("💥 Building the Daily Forge...")
     async with SessionLocal() as db:
         # --- ALGORITHMIC VECTOR PICKER (V1.5) ---
-        print("🧠 Curating Forge using Entropy & Weighted Lottery...")
+        logger.info("🧠 Curating Forge using Entropy & Weighted Lottery...")
         
         all_domains_query = await db.execute(select(InterestVector))
         all_domains = all_domains_query.scalars().all()
         
         if not all_domains:
-            print("No interests found in DB.")
+            logger.warning("No interests found in DB.")
             return
             
         now_tz = datetime.now(timezone.utc)
@@ -82,66 +85,84 @@ async def build_and_send_forge():
             items.extend(fill_items)
 
         if not items:
-            print("No unprocessed content items found, grabbing latest 5.")
+            logger.info("No unprocessed content items found, grabbing latest 5.")
             items = (await db.execute(select(ContentItem).order_by(ContentItem.ingested_at.desc()).limit(5))).scalars().all()
             if not items:
-                print("No content at all in DB.")
+                logger.warning("No content at all in DB.")
                 return
 
+        generated_count = 0
         try:
-            # 1. Quick Kata (replaces Deep Kata)
-            dk_item = items[0]
-            dk_domain = top_interests[0].domain
-            print(f"Generating Quick Kata for {dk_domain}...")
-            qk1 = generate_quick_kata(dk_item.raw_text[:3000], dk_domain)
-            db.add(DailyItem(
-                content_id=dk_item.id, item_type='quick_kata',
-                embedding=dk_item.embedding,
-                title=qk1.title, context=qk1.context, kata_question=qk1.kata_question,
-                domains=[dk_domain],
-                suggestion_url=dk_item.source_url
-            ))
-
-            # 2. Quick Katas (only 1 now to make exactly 2 total)
-            for i, qk_item in enumerate(items[1:2]):
-                qk_domain = top_interests[i+1].domain
-                print(f"Generating Quick Kata for {qk_domain}...")
-                qk = generate_quick_kata(qk_item.raw_text[:3000], qk_domain)
+            # 1. Quick Kata 1
+            try:
+                dk_item = items[0]
+                dk_domain = top_interests[0].domain
+                logger.info(f"Generating Quick Kata 1 for {dk_domain}...")
+                qk1 = generate_quick_kata(dk_item.raw_text[:3000], dk_domain)
                 db.add(DailyItem(
-                    content_id=qk_item.id, item_type='quick_kata',
-                    embedding=qk_item.embedding,
-                    title=qk.title, context=qk.context, kata_question=qk.kata_question,
-                    domains=[qk_domain],
-                    suggestion_url=qk_item.source_url
+                    content_id=dk_item.id, item_type='quick_kata',
+                    embedding=dk_item.embedding,
+                    title=qk1.title, context=qk1.context, kata_question=qk1.kata_question,
+                    domains=[dk_domain],
+                    suggestion_url=dk_item.source_url
                 ))
+                generated_count += 1
+            except Exception as e:
+                logger.error(f"Failed to generate Quick Kata 1: {e}", exc_info=True)
+
+            # 2. Quick Kata 2
+            try:
+                if len(items) > 1 and len(top_interests) > 1:
+                    qk_item = items[1]
+                    qk_domain = top_interests[1].domain
+                    logger.info(f"Generating Quick Kata 2 for {qk_domain}...")
+                    qk2 = generate_quick_kata(qk_item.raw_text[:3000], qk_domain)
+                    db.add(DailyItem(
+                        content_id=qk_item.id, item_type='quick_kata',
+                        embedding=qk_item.embedding,
+                        title=qk2.title, context=qk2.context, kata_question=qk2.kata_question,
+                        domains=[qk_domain],
+                        suggestion_url=qk_item.source_url
+                    ))
+                    generated_count += 1
+            except Exception as e:
+                logger.error(f"Failed to generate Quick Kata 2: {e}", exc_info=True)
 
             # 3. Aphorism
-            aph_item = items[3] if len(items) > 3 else items[0]
-            aph_domain = top_interests[1].domain
-            print("Generating Aphorism...")
-            aph = generate_aphorism(aph_domain)
-            db.add(DailyItem(
-                content_id=aph_item.id, item_type='aphorism',
-                embedding=aph_item.embedding,
-                quote_text=aph.quote_text, quote_author=aph.quote_author,
-                quote_context=aph.quote_context
-            ))
+            try:
+                aph_item = items[3] if len(items) > 3 else items[0]
+                aph_domain = top_interests[1].domain if len(top_interests) > 1 else top_interests[0].domain
+                logger.info(f"Generating Aphorism for {aph_domain}...")
+                aph = generate_aphorism(aph_domain)
+                db.add(DailyItem(
+                    content_id=aph_item.id, item_type='aphorism',
+                    embedding=aph_item.embedding,
+                    quote_text=aph.quote_text, quote_author=aph.quote_author,
+                    quote_context=aph.quote_context
+                ))
+                generated_count += 1
+            except Exception as e:
+                logger.error(f"Failed to generate Aphorism: {e}", exc_info=True)
 
             # 4. Inversion
-            inv_item = items[4] if len(items) > 4 else items[0]
-            inv_domain = top_interests[0].domain
-            print("Generating Inversion...")
-            inv = generate_inversion_prompt(inv_domain)
-            db.add(DailyItem(
-                content_id=inv_item.id, item_type='inversion_prompt',
-                embedding=inv_item.embedding,
-                inversion_prompt=inv.inversion_prompt
-            ))
+            try:
+                inv_item = items[4] if len(items) > 4 else items[0]
+                inv_domain = top_interests[0].domain
+                logger.info(f"Generating Inversion for {inv_domain}...")
+                inv = generate_inversion_prompt(inv_domain)
+                db.add(DailyItem(
+                    content_id=inv_item.id, item_type='inversion_prompt',
+                    embedding=inv_item.embedding,
+                    inversion_prompt=inv.inversion_prompt
+                ))
+                generated_count += 1
+            except Exception as e:
+                logger.error(f"Failed to generate Inversion: {e}", exc_info=True)
 
             # 5. Current Affairs (Blind Spot via Crawl4AI)
             try:
-                domain_name = top_interests[3].domain
-                print(f"Fetching Current Affairs for Blind Spot: {domain_name}...")
+                domain_name = top_interests[3].domain if len(top_interests) > 3 else top_interests[0].domain
+                logger.info(f"Fetching Current Affairs for Blind Spot: {domain_name}...")
                 
                 from duckduckgo_search import AsyncDDGS
                 ddgs = AsyncDDGS()
@@ -153,19 +174,19 @@ async def build_and_send_forge():
                     news_url = news.get('url', '')
                     news_snippet = news.get('body', '')
                     
-                    print(f"Found news: {news_title}")
+                    logger.info(f"Found news: {news_title}")
                     
                     context_text = f"{news_title} - {news_snippet}"
                     
                     try:
                         from crawl4ai import AsyncWebCrawler
-                        print(f"Crawling {news_url} for deep context...")
+                        logger.info(f"Crawling {news_url} for deep context...")
                         async with AsyncWebCrawler(verbose=False) as crawler:
                             result = await crawler.arun(url=news_url)
                             if result.success and result.markdown:
                                 context_text = f"Title: {news_title}\n\nContent:\n{result.markdown[:4000]}"
                     except Exception as crawl_e:
-                        print(f"Crawl failed, using snippet. Error: {crawl_e}")
+                        logger.warning(f"Crawl failed, using snippet. Error: {crawl_e}")
                     
                     # Generate the hook
                     from src.synthesis.suggestion_curator import generate_suggestion_hook
@@ -179,22 +200,34 @@ async def build_and_send_forge():
                         suggestion_hook=hook_res.suggestion_hook,
                         domains=[domain_name]
                     ))
+                    generated_count += 1
             except Exception as e:
-                print(f"Skipping Current Affairs due to error: {e}")
+                logger.warning(f"Skipping Current Affairs due to error: {e}")
 
             # Mark processed
             for item in items:
                 item.processed = True
             
             await db.commit()
-            print("Successfully populated DailyItems in DB.")
+            logger.info(f"Successfully populated {generated_count} DailyItems in DB.")
             
         except Exception as e:
-            print(f"Error building forge: {e}")
+            logger.error(f"Error building forge: {e}", exc_info=True)
             await db.rollback()
+            try:
+                from telegram import Bot
+                from src.config import settings
+                if settings.telegram_bot_token and settings.telegram_chat_id:
+                    bot = Bot(token=settings.telegram_bot_token)
+                    await bot.send_message(
+                        chat_id=settings.telegram_chat_id,
+                        text=f"⚠️ Daily Forge build failed: {str(e)[:250]}"
+                    )
+            except Exception:
+                pass
             return
             
-    print("Sending Forge to Telegram...")
+    logger.info("Sending Forge to Telegram...")
     from src.jobs.daily_forge import send_forge
     await send_forge()
 

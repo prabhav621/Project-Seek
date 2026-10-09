@@ -1,9 +1,12 @@
 import sys
 import asyncio
+import logging
 import traceback
 from pathlib import Path
 from datetime import datetime, date
 from telegram import Bot
+
+logger = logging.getLogger(__name__)
 
 # Add project root to path
 root_path = Path(__file__).resolve().parent.parent.parent
@@ -34,7 +37,7 @@ def _run_forge_sync(target_date: date) -> dict:
 async def send_forge():
     try:
         target_date = date.today()
-        print(f"Curating daily forge for {target_date}...")
+        logger.info(f"Curating daily forge for {target_date}...")
 
         # Run the synchronous curator in a thread to avoid blocking
         portfolio = await asyncio.to_thread(_run_forge_sync, target_date)
@@ -50,18 +53,18 @@ async def send_forge():
                 items.append(item_or_list)
 
         if not items and not neutral_bricks:
-            print("No items found for daily forge.")
+            logger.warning("No items found for daily forge.")
             return
 
         bot_token = settings.telegram_bot_token
         chat_id = settings.telegram_chat_id
 
         if not bot_token or not chat_id:
-            print("Telegram bot token or chat ID is missing. Cannot send message.")
+            logger.error("Telegram bot token or chat ID is missing. Cannot send message.")
             return
 
         bot = Bot(token=bot_token)
-        print("Sending message via Telegram...")
+        logger.info("Sending message via Telegram...")
         
         if items:
             formatted_message = format_daily_forge(items, datetime.now(), [])
@@ -111,12 +114,12 @@ async def send_forge():
             await bot.send_message(chat_id=chat_id, text=brick_text, reply_markup=reply_markup, parse_mode='HTML')
             await asyncio.sleep(0.5)
             
-        print("Done.")
+        logger.info("Daily Forge delivery completed successfully.")
 
     except Exception as e:
-        print(f"Error sending forge: {e}")
-        traceback.print_exc()
+        logger.error(f"Error sending forge: {e}", exc_info=True)
 
 
 if __name__ == "__main__":
     asyncio.run(send_forge())
+

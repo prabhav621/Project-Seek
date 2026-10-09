@@ -22,6 +22,9 @@ def get_limiter_for_model_string(model_name: str):
     return get_limiter_for_model(ModelTier.FLASH)
 
 
+import re
+import json
+
 # ─── Adapter classes ──────────────────────────
 # These mimic the Google genai SDK response shape so that existing
 # callers (e.g. `response.text`, `response.embeddings[0].values`)
@@ -29,14 +32,47 @@ def get_limiter_for_model_string(model_name: str):
 
 class DummyResponse:
     def __init__(self, text):
-        clean_text = text.strip()
-        if clean_text.startswith("```json"):
-            clean_text = clean_text[7:]
-        elif clean_text.startswith("```"):
-            clean_text = clean_text[3:]
-        if clean_text.endswith("```"):
-            clean_text = clean_text[:-3]
-        self.text = clean_text.strip()
+        self.text = self._clean_json(text)
+
+    @staticmethod
+    def _clean_json(text: str) -> str:
+        if not text:
+            return ""
+        cleaned = str(text).strip()
+
+        # 1. Strip reasoning / thought tags if present (<thought>...</thought> or <reasoning>...</reasoning>)
+        cleaned = re.sub(r"<(?:thought|reasoning)>.*?</(?:thought|reasoning)>", "", cleaned, flags=re.DOTALL).strip()
+
+        # 2. If code block markdown exists, extract content within ```json ... ``` or ``` ... ```
+        code_block_match = re.search(r"```(?:json)?\s*(\{.*?\})\s*```", cleaned, flags=re.DOTALL)
+        if code_block_match:
+            candidate = code_block_match.group(1).strip()
+            try:
+                json.loads(candidate)
+                return candidate
+            except Exception:
+                pass
+
+        # 3. Search for outermost JSON object { ... }
+        first_brace = cleaned.find("{")
+        last_brace = cleaned.rfind("}")
+        if first_brace != -1 and last_brace != -1 and last_brace > first_brace:
+            candidate = cleaned[first_brace:last_brace + 1].strip()
+            try:
+                json.loads(candidate)
+                return candidate
+            except Exception:
+                return candidate
+
+        # 4. Fallback: standard markdown fence stripping
+        if cleaned.startswith("```json"):
+            cleaned = cleaned[7:]
+        elif cleaned.startswith("```"):
+            cleaned = cleaned[3:]
+        if cleaned.endswith("```"):
+            cleaned = cleaned[:-3]
+
+        return cleaned.strip()
 
 
 class DummyEmbedding:

@@ -26,6 +26,17 @@ def _apply_provider_kwargs(kwargs: dict, target_model: str) -> dict:
     if "extra_body" in kwargs:
         del kwargs["extra_body"]
 
+    # Pop json_mode so it doesn't get passed as an invalid parameter to providers like NVIDIA NIM
+    json_mode = kwargs.pop("json_mode", False)
+    if json_mode:
+        if ("gemini" in target_model or "openrouter" in target_model) and "nvidia" not in target_model:
+            kwargs["response_format"] = {"type": "json_object"}
+
+    # Gemini 3.x recommends temperature = 1.0 to avoid loops and degraded performance
+    if ("gemini-3" in target_model or "gemini-2.5" in target_model) and "temperature" in kwargs:
+        if kwargs["temperature"] is not None and kwargs["temperature"] < 1.0:
+            kwargs["temperature"] = 1.0
+
     if "gemini" in target_model:
         kwargs["api_key"] = settings.gemini_api_key
 
