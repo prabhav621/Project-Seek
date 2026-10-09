@@ -1,4 +1,5 @@
 import os
+import re
 import sys
 import asyncio
 import logging
@@ -32,10 +33,15 @@ async def is_high_signal(title: str, snippet: str) -> bool:
             messages=[{"role": "user", "content": prompt}],
             temperature=0.1
         )
-        return "YES" in (res or "").upper()
+        clean = (res or "").strip().upper()
+        if clean.startswith("YES"):
+            return True
+        if clean.startswith("NO"):
+            return False
+        return bool(re.search(r'\bYES\b', clean)) and not bool(re.search(r'\bNO\b', clean))
     except Exception as e:
-        logger.warning(f"Signal check fallback to True: {e}")
-        return True
+        logger.warning(f"Signal check failed, skipping candidate to protect shadow pool: {e}")
+        return False
 
 async def run_forager():
     """

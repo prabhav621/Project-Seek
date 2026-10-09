@@ -98,6 +98,8 @@ def extract_relevant_snippets(text: str, query: str, window_size: int = 250, ove
     selected = []
     selected_indices = []
     for score, idx, chunk_text in windows:
+        if score <= 0:
+            break
         if len(selected) >= top_k:
             break
         if any(abs(idx - prev_idx) < (window_size // 2) for prev_idx in selected_indices):

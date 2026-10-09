@@ -18,5 +18,7 @@ dependencies = [
     "faster-whisper",
     "apscheduler",
     "google-genai",
-    "asyncpg"
+    "asyncpg",
+    "pytz",
+    "duckduckgo-search"
 ]

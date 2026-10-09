@@ -364,7 +364,7 @@ async def post_init(application: Application):
     scheduler.add_job(scheduled_forge, 'cron', hour=8, minute=0)
     scheduler.add_job(scheduled_forager, 'cron', hour=2, minute=0)
     scheduler.start()
-    print("⏰ Daily Forge (8:00 AM IST) & Autonomous Forager (2:00 AM IST) Schedulers started.")
+    logger.info("Daily Forge (8:00 AM IST) & Autonomous Forager (2:00 AM IST) Schedulers started.")
     from telegram import BotCommand
     commands = [
         BotCommand("start", "Start the bot"),
