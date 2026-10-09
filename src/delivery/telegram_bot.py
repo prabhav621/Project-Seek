@@ -299,7 +299,8 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
         processing_msg = await message.reply_text("🤔 Thinking with you...")
         try:
-            insight = await engine.ask_brick(original_text, user_query, focus)
+            async with SessionLocal() as db:
+                insight = await engine.ask_brick(original_text, user_query, db=db, focus_state=focus)
             output = f"🧠 **Insight:**\n\n{insight}"
             if focus:
                 output = f"[❗️ Focus State: {focus}]\n\n" + output
@@ -356,13 +357,13 @@ async def post_init(application: Application):
     scheduler.add_job(scheduled_forge, 'cron', hour=8, minute=0)
     scheduler.start()
     print("⏰ Daily Forge Scheduler started for 8:00 AM IST")
-    
     from telegram import BotCommand
     commands = [
         BotCommand("start", "Start the bot"),
         BotCommand("forge", "Generate the Daily Forge"),
         BotCommand("help", "Show help message"),
         BotCommand("strategize", "Ingest URL to Neutral Brick"),
+        BotCommand("source", "View original source URL & raw transcript"),
         BotCommand("focus", "Set temporary focus"),
         BotCommand("unfocus", "Clear focus"),
         BotCommand("lens", "Apply a lens to a replied brick"),
@@ -384,6 +385,59 @@ async def handle_end(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "• Send any raw thought or question to query your Librarian.\n"
         "There are no rigid chat sessions to end."
     )
+
+
+async def handle_source(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """
+    Retrieves the original source URL, author, platform, and transcript statistics
+    for a replied Neutral Brick or latest Brick.
+    """
+    message = update.message
+    if not message:
+        return
+
+    reply_msg = message.reply_to_message
+    if not reply_msg:
+        await message.reply_text(
+            "💡 *Usage:* Reply to any Neutral Brick message with `/source` or `/transcript` "
+            "to view the original source URL, author, and full transcript availability.",
+            parse_mode='Markdown'
+        )
+        return
+
+    target_text = reply_msg.text or ""
+    from src.synthesis.strategy_generator import DualLayerContextEngine
+    engine = DualLayerContextEngine()
+
+    async with SessionLocal() as db:
+        brick, content_item = await engine.find_brick_and_source(target_text, db)
+
+    if not content_item:
+        await message.reply_text("Could not locate the original source record for this brick in the database.")
+        return
+
+    raw_len = len(content_item.raw_text or "")
+    word_count = len((content_item.raw_text or "").split())
+    source_type = (content_item.source_type or "article").title()
+    title = content_item.title or "Untitled Resource"
+    author = content_item.author or "Unknown"
+    url = content_item.source_url or "N/A"
+
+    preview = (content_item.raw_text[:280].replace('\n', ' ').strip() + "...") if raw_len > 0 else "No transcript text available."
+
+    response_text = (
+        f"📜 *Original Source Record*\n\n"
+        f"📌 *Title:* {title}\n"
+        f"👤 *Author / Speaker:* {author}\n"
+        f"📁 *Platform:* {source_type}\n"
+        f"🔗 *Source URL:* {url}\n"
+        f"📊 *Transcript Size:* {word_count:,} words ({raw_len:,} characters)\n\n"
+        f"*Transcript Preview:*\n_{preview}_\n\n"
+        f"💡 *Deep Dive:* Swipe-reply to this message with any question (e.g. *\"What did they say about X?\"* or *\"Quote their exact arguments\"*) "
+        f"to interrogate the full raw transcript!"
+    )
+
+    await message.reply_text(response_text, parse_mode='Markdown', disable_web_page_preview=False)
 
 
 async def handle_document(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -625,7 +679,8 @@ async def handle_lens(update: Update, context: ContextTypes.DEFAULT_TYPE):
         # Ad-hoc custom lens: treat as contextual sparring via ask_brick!
         processing_msg = await message.reply_text(f"🧠 Examining Brick through lens of: '{target_arg}'...")
         prompt = f"Analyze this Brick through the strategic lens of: {target_arg}"
-        res = await engine.ask_brick(brick_text, prompt, focus)
+        async with SessionLocal() as db:
+            res = await engine.ask_brick(brick_text, prompt, db=db, focus_state=focus)
         await processing_msg.edit_text(res or "Failed to analyze.")
 
 async def handle_callback_query(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -713,6 +768,8 @@ def main():
 
     application.add_handler(CommandHandler("forge", handle_forge))
     application.add_handler(CommandHandler("end", handle_end))
+    application.add_handler(CommandHandler("source", handle_source))
+    application.add_handler(CommandHandler("transcript", handle_source))
     application.add_handler(CommandHandler("focus", handle_focus))
     application.add_handler(CommandHandler("unfocus", handle_unfocus))
     application.add_handler(CommandHandler("strategize", handle_strategize))

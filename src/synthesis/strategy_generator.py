@@ -162,14 +162,80 @@ LENS APPLIED: {clean_name.upper()}
             logger.error(f"Lens application failed: {e}")
             return "I couldn't apply this lens right now due to a temporary service issue. Ask me again in a moment!"
 
-    async def ask_brick(self, brick_text: str, question: str, focus_state: Optional[str] = None) -> Optional[str]:
-        """Contextually spars with the Founder on a specific Neutral Brick using the PRO Tier."""
+    async def find_brick_and_source(self, brick_text: str, db) -> tuple:
+        """Locates the NeutralBrick and its parent ContentItem from a Telegram brick message snippet."""
+        from src.db.models import NeutralBrick, ContentItem
+        from sqlalchemy import select
+
+        if not db or not brick_text:
+            return None, None
+
+        clean_text = str(brick_text).strip()
+
+        # If replying to a /source card itself
+        if "Original Source Record" in clean_text or "Source URL:" in clean_text:
+            url_match = re.search(r'Source URL:\s*(\S+)', clean_text)
+            if url_match:
+                c_url = url_match.group(1).strip()
+                c_stmt = select(ContentItem).filter(ContentItem.source_url == c_url).limit(1)
+                content_item = (await db.execute(c_stmt)).scalars().first()
+                if content_item:
+                    b_stmt = select(NeutralBrick).filter(NeutralBrick.source_content_id == content_item.id).limit(1)
+                    brick = (await db.execute(b_stmt)).scalars().first()
+                    return brick, content_item
+
+        # 1. Extract Thesis snippet from brick text
+        thesis_snippet = None
+        if "Core Thesis:" in clean_text:
+            part = clean_text.split("Core Thesis:", 1)[1]
+            for delimiter in ["Mechanics:", "<b>Mechanics:", "Pointers:", "<b>Pointers:"]:
+                if delimiter in part:
+                    part = part.split(delimiter, 1)[0]
+            thesis_snippet = part.strip()
+
+        brick = None
+        if thesis_snippet:
+            clean_snippet = thesis_snippet.replace("<b>", "").replace("</b>", "").strip().split("\n")[0]
+            if len(clean_snippet) > 15:
+                stmt = select(NeutralBrick).filter(NeutralBrick.core_thesis.contains(clean_snippet[:50])).limit(1)
+                brick = (await db.execute(stmt)).scalars().first()
+
+        # Fallback: if not found by partial match, try latest brick
+        if not brick:
+            stmt = select(NeutralBrick).order_by(NeutralBrick.created_at.desc()).limit(1)
+            brick = (await db.execute(stmt)).scalars().first()
+
+        content_item = None
+        if brick and brick.source_content_id:
+            c_stmt = select(ContentItem).filter(ContentItem.id == brick.source_content_id).limit(1)
+            content_item = (await db.execute(c_stmt)).scalars().first()
+
+        return brick, content_item
+
+    async def ask_brick(self, brick_text: str, question: str, db=None, focus_state: Optional[str] = None) -> Optional[str]:
+        """
+        Contextually spars with the Founder on a specific Neutral Brick using the PRO Tier.
+        If db is provided, retrieves the original raw source transcript to enable deep-dive answering.
+        """
         system_prompt = self.build_system_prompt(focus_state)
-        system_prompt += f"\n\n{CPO_VOICE_PROMPT}\nThe Founder is asking a specific question or pushing back on the provided Neutral Brick. Answer directly using the Brick's context and your reasoning."
+        system_prompt += f"\n\n{CPO_VOICE_PROMPT}\nThe Founder is asking a specific question, pushing back, or deep-diving into the provided Neutral Brick. Answer directly with precision and high agency."
+
+        source_context = ""
+        if db:
+            try:
+                brick, content_item = await self.find_brick_and_source(brick_text, db)
+                if content_item and content_item.raw_text:
+                    system_prompt += "\n\nORIGINAL RAW TRANSCRIPT & SOURCE CONTEXT AVAILABLE:\nYou have direct access to the complete unedited raw transcript / source article from which this Neutral Brick was extracted. If the Founder asks for specific details, quotes, numbers, speaker reasoning, or deep dives beyond the concise summary, analyze the raw transcript and quote or cite the source directly."
+                    raw_excerpt = content_item.raw_text[:15000]
+                    source_context = f"\n\nORIGINAL SOURCE METADATA:\n- Title: {content_item.title}\n- URL: {content_item.source_url}\n- Author / Speaker: {content_item.author or 'Unknown'}\n- Platform: {content_item.source_type}\n\nORIGINAL RAW TRANSCRIPT (UP TO 15,000 CHARS):\n{raw_excerpt}"
+            except Exception as e:
+                logger.warning(f"Could not load source context for ask_brick: {e}", exc_info=True)
+
+        user_content = f"NEUTRAL BRICK:\n{brick_text}{source_context}\n\nFOUNDER QUESTION: {question}"
 
         messages = [
             {"role": "system", "content": system_prompt},
-            {"role": "user", "content": f"NEUTRAL BRICK:\n{brick_text}\n\nFOUNDER QUESTION: {question}"}
+            {"role": "user", "content": user_content}
         ]
 
         try:
