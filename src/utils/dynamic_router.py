@@ -102,7 +102,7 @@ def get_top_free_flash_models(limit: int = 2) -> List[Dict]:
         # Static resilient fallbacks
         _cached_flash_models = [
             {"id": "meta-llama/llama-3.1-8b-instruct:free", "name": "Llama 3.1 8B (Free)", "params": 8},
-            {"id": "google/gemini-2.0-flash-exp:free", "name": "Gemini 2.0 Flash (Free)", "params": 0}
+            {"id": "meta-llama/llama-3.2-3b-instruct:free", "name": "Llama 3.2 3B (Free)", "params": 3}
         ]
         
     return _cached_flash_models

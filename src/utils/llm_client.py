@@ -83,11 +83,12 @@ def _get_cascade_sequence(target: str) -> List[Tuple[str, int, str]]:
         sequence.append(("cloudflare/@cf/meta/llama-3.1-8b-instruct", 15, "Cloudflare (Llama 3.1 8B Safety Net)"))
         return sequence
 
-    # ─── 2. FLASH TIER: User-Facing Chat, Brick Interrogation, Quick Katas ───
+    # ─── 2. FLASH TIER: User-Facing Chat, Fast Synthesis ───
     elif target in [Tier.FLASH.value, ModelTier.FLASH.value, "flash"]:
         sequence = [
-            ("gemini/gemini-3.5-flash-lite", 60, "Gemini 3.5 Flash Lite (500 RPD)"),
-            ("gemini/gemini-3.1-flash-lite", 60, "Gemini 3.1 Flash Lite (500 RPD)")
+            ("gemini/gemini-3.8-flash", 60, "Gemini 3.8 Flash (Latest Frontier Flash)"),
+            ("gemini/gemini-3.5-flash-lite", 60, "Gemini 3.5 Flash Lite (High-Throughput)"),
+            ("gemini/gemini-3.1-flash-lite", 60, "Gemini 3.1 Flash Lite (Fallback)")
         ]
         
         # Dynamic OpenRouter Free Flash Sweepers (< 70B)

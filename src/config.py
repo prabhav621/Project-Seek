@@ -59,9 +59,10 @@ class Settings(BaseSettings):
 
     def get_tier_for_task(self, task: TaskType) -> Tier:
         if task in [TaskType.DEEP_KATA, TaskType.APHORISM, TaskType.INVERSION_PROMPT, 
-                    TaskType.LIBRARIAN_MERGE, TaskType.REVERSE_RAG, TaskType.ASK_BRICK, TaskType.APPLY_LENS]:
+                    TaskType.LIBRARIAN_MERGE, TaskType.REVERSE_RAG, TaskType.ASK_BRICK, 
+                    TaskType.APPLY_LENS, TaskType.QUICK_KATA]:
             return Tier.PRO
-        elif task in [TaskType.QUICK_KATA, TaskType.STRATEGY_SYNTHESIS]:
+        elif task in [TaskType.STRATEGY_SYNTHESIS]:
             return Tier.FLASH
         else:
             return Tier.LITE
